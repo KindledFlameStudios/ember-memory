@@ -46,7 +46,7 @@ Built with [ChromaDB](https://www.trychroma.com/) and [Ollama](https://ollama.co
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/kindled-flame/ember-memory.git
+git clone https://github.com/KindledFlameStudios/ember-memory.git
 cd ember-memory
 pip install chromadb mcp[cli]
 ```
