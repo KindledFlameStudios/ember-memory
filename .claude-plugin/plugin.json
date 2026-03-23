@@ -1,0 +1,16 @@
+{
+  "name": "ember-memory",
+  "version": "1.0.0",
+  "description": "Persistent semantic memory for Claude Code. Local vector database with auto-retrieval — your AI remembers across sessions.",
+  "author": {
+    "name": "Kindled Flame Studios",
+    "email": "support@kindledflamestudios.com",
+    "url": "https://kindledflamestudios.com"
+  },
+  "homepage": "https://github.com/KindledFlameStudios/ember-memory",
+  "repository": "https://github.com/KindledFlameStudios/ember-memory",
+  "license": "MIT",
+  "keywords": ["memory", "semantic-search", "chromadb", "ollama", "rag", "auto-retrieval", "local", "privacy"],
+  "hooks": "./hooks.json",
+  "mcpServers": "./.mcp.json"
+}
