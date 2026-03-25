@@ -73,3 +73,21 @@ SIMILARITY_THRESHOLD = float(_get("EMBER_SIMILARITY_THRESHOLD", "0.45"))
 MAX_HOOK_RESULTS = int(_get("EMBER_MAX_HOOK_RESULTS", "5"))
 MAX_PREVIEW_CHARS = int(_get("EMBER_MAX_PREVIEW_CHARS", "800"))
 HOOK_DEBUG = _get("EMBER_HOOK_DEBUG", "").lower() in ("1", "true", "yes")
+
+# -- Embedding (cloud providers) --
+OPENAI_API_KEY = _get("EMBER_OPENAI_API_KEY", "")
+OPENAI_EMBEDDING_MODEL = _get("EMBER_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+GOOGLE_API_KEY = _get("EMBER_GOOGLE_API_KEY", "")
+GOOGLE_EMBEDDING_MODEL = _get("EMBER_GOOGLE_EMBEDDING_MODEL", "text-embedding-004")
+
+# -- Retrieval --
+RETRIEVE_TIMEOUT_MS = int(_get("EMBER_RETRIEVE_TIMEOUT_MS", "2000"))
+
+# -- Engine weights --
+WEIGHT_SIMILARITY = float(_get("EMBER_WEIGHT_SIMILARITY", "0.40"))
+WEIGHT_HEAT = float(_get("EMBER_WEIGHT_HEAT", "0.25"))
+WEIGHT_CONNECTION = float(_get("EMBER_WEIGHT_CONNECTION", "0.20"))
+WEIGHT_DECAY = float(_get("EMBER_WEIGHT_DECAY", "0.15"))
+
+# -- Context tag --
+CONTEXT_TAG = _get("EMBER_CONTEXT_TAG", "ember-memory")
