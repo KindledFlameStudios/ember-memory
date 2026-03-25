@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ember-memory": {
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/ember_memory/server.py"],
+      "env": {}
+    }
+  }
+}
