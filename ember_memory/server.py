@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 
 from mcp.server.fastmcp import FastMCP
 from ember_memory import config
-from ember_memory.backends import get_backend
+from ember_memory.core.embeddings.loader import get_embedding_provider
+from ember_memory.core.backends.loader import get_backend_v2
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 
@@ -25,13 +26,8 @@ across sessions — architecture decisions, project context, debugging insights,
 anything worth remembering. Collections organize memories by topic.
 """)
 
-backend = get_backend(
-    backend=config.BACKEND,
-    data_dir=config.DATA_DIR,
-    embedding_provider=config.EMBEDDING_PROVIDER,
-    embedding_model=config.EMBEDDING_MODEL,
-    ollama_url=config.OLLAMA_URL,
-)
+embedder = get_embedding_provider()
+backend = get_backend_v2()
 
 
 # ── Tools ────────────────────────────────────────────────────────────────────
@@ -62,7 +58,8 @@ def memory_store(
     if source:
         metadata["source"] = source
 
-    count = backend.store(doc_id, content, metadata, col_name)
+    embedding = embedder.embed(content)
+    count = backend.insert(col_name, doc_id, content, embedding, metadata)
     return f"Stored in '{col_name}' (id: {doc_id}). Collection now has {count} entries."
 
 
@@ -82,13 +79,14 @@ def memory_find(
         tags_filter: Only return entries containing this tag (e.g. 'backend').
     """
     n = n_results or config.SEARCH_LIMIT
+    query_embedding = embedder.embed(query)
 
     if collection == "*":
         all_results = []
         for col_info in backend.list_collections():
             col_name = col_info["name"]
             try:
-                results = backend.search(query, col_name, n)
+                results = backend.search(col_name, query_embedding, n)
                 for r in results:
                     if tags_filter and tags_filter not in r["metadata"].get("tags", ""):
                         continue
@@ -97,7 +95,7 @@ def memory_find(
             except Exception:
                 continue
 
-        all_results.sort(key=lambda x: x.get("distance", 999))
+        all_results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
         all_results = all_results[:n]
 
         if not all_results:
@@ -105,14 +103,14 @@ def memory_find(
 
         output = []
         for r in all_results:
-            score = f" (similarity: {1 - r['distance']:.3f})" if r.get("distance") is not None else ""
+            score = f" (similarity: {r['similarity']:.3f})" if r.get("similarity") is not None else ""
             tags = f" [tags: {r['metadata'].get('tags', '')}]" if r["metadata"].get("tags") else ""
             source = f" [source: {r['metadata'].get('source', '')}]" if r["metadata"].get("source") else ""
             output.append(f"**[{r['_collection']}]**{score}{tags}{source}\n{r['content']}")
         return "\n\n---\n\n".join(output)
 
     col_name = collection or config.DEFAULT_COLLECTION
-    results = backend.search(query, col_name, n)
+    results = backend.search(col_name, query_embedding, n)
 
     if not results:
         return f"No matching memories found in '{col_name}'."
@@ -121,7 +119,7 @@ def memory_find(
     for r in results:
         if tags_filter and tags_filter not in r["metadata"].get("tags", ""):
             continue
-        score = f" (similarity: {1 - r['distance']:.3f})" if r.get("distance") is not None else ""
+        score = f" (similarity: {r['similarity']:.3f})" if r.get("similarity") is not None else ""
         tags = f" [tags: {r['metadata'].get('tags', '')}]" if r["metadata"].get("tags") else ""
         source = f" [source: {r['metadata'].get('source', '')}]" if r["metadata"].get("source") else ""
         output.append(f"**{r['id']}**{score}{tags}{source}\n{r['content']}")
@@ -144,7 +142,7 @@ def memory_delete(
         collection: Collection containing the memory.
     """
     col_name = collection or config.DEFAULT_COLLECTION
-    if not backend.delete(doc_id, col_name):
+    if not backend.delete(col_name, doc_id):
         return f"No memory with ID '{doc_id}' found in '{col_name}'."
     return f"Deleted '{doc_id}' from '{col_name}'."
 
@@ -167,7 +165,7 @@ def memory_update(
         source: New source attribution. Pass empty string to clear.
     """
     col_name = collection or config.DEFAULT_COLLECTION
-    existing = backend.get(doc_id, col_name)
+    existing = backend.get(col_name, doc_id)
     if not existing:
         return f"No memory with ID '{doc_id}' found in '{col_name}'."
 
@@ -178,7 +176,8 @@ def memory_update(
     if source is not None:
         metadata["source"] = source
 
-    backend.update(doc_id, content, metadata, col_name)
+    embedding = embedder.embed(content)
+    backend.update(col_name, doc_id, content, embedding, metadata)
     return f"Updated '{doc_id}' in '{col_name}'."
 
 
@@ -196,16 +195,21 @@ def list_collections() -> str:
 @mcp.tool()
 def create_collection(
     name: str,
+    scope: str = "shared",
     description: str | None = None,
 ) -> str:
     """Create a new memory collection for organizing knowledge by topic.
 
     Args:
         name: Collection name (use kebab-case, e.g. 'project-notes').
+        scope: Namespace scope — 'shared' (default, visible to all AIs) or an AI
+               identifier like 'claude', 'gemini', 'codex' (private to that AI).
         description: What this collection is for.
     """
-    backend.create_collection(name, description)
-    return f"Collection '{name}' ready."
+    from ember_memory.core.namespaces import resolve_collection_name
+    full_name = resolve_collection_name(name, scope)
+    backend.create_collection(full_name, dimension=embedder.dimension(), description=description)
+    return f"Collection '{full_name}' created (scope: {scope})."
 
 
 @mcp.tool()
