@@ -1,0 +1,1 @@
+# Ember Memory Controller
