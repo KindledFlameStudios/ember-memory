@@ -1,205 +1,214 @@
 # Ember Memory
 
-**Persistent semantic memory for Claude Code.**
+**Your AI forgets everything between sessions. Ember Memory fixes that.**
 
-Give your AI partner memory that lasts between sessions. Ember Memory stores knowledge in a local vector database and automatically retrieves relevant context on every message — no manual recall needed.
+Every conversation starts from scratch. Your architecture decisions, your debugging history, your project context — gone. The bigger your project gets, the worse it gets. You explain the same things over and over, burning tokens on context your AI already had yesterday.
 
-Built with [ChromaDB](https://www.trychroma.com/) and [Ollama](https://ollama.com) embeddings. Everything runs locally. Your memories never leave your machine.
+Ember Memory gives your AI persistent memory that adapts to what matters as you work.
 
----
+Works with **Claude Code**, **Gemini CLI**, and **Codex**. Runs locally by default — with Ollama, your memories never leave your machine.
 
-## What It Does
+## What Makes This Different
 
-- **Stores knowledge** — Architecture decisions, debugging insights, project context, anything worth remembering
-- **Auto-retrieves** — A hook fires on every message, searching all collections and injecting relevant memories into context
-- **Organizes by topic** — Collections group memories semantically (e.g. `architecture`, `debugging`, `project-notes`)
-- **Searches semantically** — Find memories by meaning, not just keywords
-- **Runs locally** — ChromaDB + Ollama bge-m3. No API keys, no cloud, no data leaving your machine
+Most memory tools store and retrieve. Ember Memory **adapts**.
 
-## Architecture
+Using the same patterns that power game AI — heat maps, co-occurrence graphs, natural decay — your memory adapts to what matters *right now*:
 
-```
-┌──────────────────────────────────┐
-│  Claude Code                     │
-│  ┌────────────────────────────┐  │
-│  │  MCP Tools                 │  │  memory_store, memory_find, etc.
-│  │  Auto-retrieval Hook       │  │  fires every message
-│  └────────────┬───────────────┘  │
-├───────────────┼──────────────────┤
-│  Ember Memory │                  │
-│  ┌────────────┴───────────────┐  │
-│  │  Embedding Layer           │  │  Ollama bge-m3 (swappable)
-│  ├────────────────────────────┤  │
-│  │  Storage Backend           │  │  ChromaDB (swappable)
-│  └────────────────────────────┘  │
-└──────────────────────────────────┘
-```
+- **Heat tracking** — memories you reference often surface faster. Working on auth all afternoon? Auth context rises to the top automatically.
+- **Connection discovery** — topics that appear together become linked. The system learns that "auth" and "rate limiting" are related in *your* project, even if they're not semantically similar.
+- **Natural decay** — old context fades from auto-retrieval, keeping your context window focused on what's fresh. Nothing is deleted — stale memories are still searchable, just not pushed into every conversation.
 
-## Prerequisites
+The result: after a week of use, your memory system knows what you're working on, what's connected to what, and what's no longer relevant. Without you configuring anything.
 
-- **Python 3.10+**
-- **Ollama** — [Install here](https://ollama.com)
-- **Claude Code** — Anthropic's CLI for Claude
+**This is what makes Ember Memory different.**
 
-## Quickstart
-
-### 1. Clone and install
+## Quick Start
 
 ```bash
+# 1. Clone and install
 git clone https://github.com/KindledFlameStudios/ember-memory.git
 cd ember-memory
-pip install chromadb mcp[cli]
+pip install -e .
+
+# 2. Set up Ollama (local embeddings, free)
+ollama serve && ollama pull bge-m3
+
+# 3. Run the setup wizard
+python -m ember_memory.setup
+
+# 4. Restart your CLI — that's it
 ```
 
-### 2. Set up Ollama
+The wizard detects your installed CLIs, configures the hooks, and runs a test retrieval. Four steps to persistent memory.
 
-```bash
-ollama serve        # Start Ollama (if not already running)
-ollama pull bge-m3  # Download the embedding model
+## Supported CLIs
+
+| CLI | Hook | Status |
+|-----|------|--------|
+| **Claude Code** | `UserPromptSubmit` | Full auto-retrieval |
+| **Gemini CLI** | `BeforeAgent` | Full auto-retrieval |
+| **Codex** | MCP tools | Manual store/search (auto-retrieval when hooks stabilize) |
+
+Claude Code and Gemini CLI get full auto-retrieval — relevant memories are injected into every message automatically. Codex gets MCP tools for manual memory access; auto-retrieval will be added when Codex ships a stable pre-prompt hook.
+
+### Multi-AI Namespacing
+
+Working across multiple CLIs? Collections support AI-specific namespaces:
+
+```
+shared:architecture     <- all AIs see this
+shared:project-notes    <- all AIs see this
+claude:preferences      <- only Claude retrieves this
+gemini:preferences      <- only Gemini retrieves this
 ```
 
-### 3. Run setup
+Your project knowledge flows everywhere. AI-specific preferences stay private. The hook knows which CLI called it and filters automatically.
 
-```bash
-python scripts/setup.py
+## The Ember Engine
+
+Four systems working together. All deterministic. Zero LLM calls. Inspired by game AI — the same patterns that track important regions in strategy games, decay unused state in simulations, and discover emergent relationships in complex systems.
+
+### How it works
+
+```
+You type a message in any CLI
+        |
+   Hook fires automatically
+        |
+   Embeds your message, searches all collections
+        |
+   Engine scores results:
+     similarity (40%) + heat (25%) + connections (20%) + freshness (15%)
+        |
+   Top results injected into AI's context
+        |
+   Your AI responds with knowledge it "remembers"
 ```
 
-This will:
-- Verify all prerequisites
-- Create the data directory (`~/.ember-memory`)
-- Register the MCP server with Claude Code
-- Wire the auto-retrieval hook
+Every memory candidate gets a composite score:
 
-### 4. Restart Claude Code
+```
+score = (semantic_similarity x 0.40)    How relevant is this to your query?
+      + (heat_boost x 0.25)             Have you been referencing this lately?
+      + (connection_bonus x 0.20)       Is this linked to other active topics?
+      + (freshness x 0.15)              How recently was this accessed?
+```
 
-Close and reopen Claude Code to load the MCP server.
+A warm, connected, fresh memory with decent text similarity will outrank a cold, isolated, stale memory with slightly better similarity. That's the adaptive behavior — your memory adapts to what matters to *you*.
 
-### 5. Ingest your content
+### What you experience
+
+**Week 1:** Mostly semantic similarity. The system is learning your patterns.
+
+**Week 2+:** You notice it. The memories that surface aren't just text-relevant — they're *contextually* relevant. The auth docs you've been hammering all week are right there. The API spec you haven't touched in a month quietly steps back. Topics you always discuss together start surfacing together.
+
+You never configure this. It just happens.
+
+Your AI sees relevant memories before responding. No manual recall. No slash commands. The right context just shows up.
+
+## Ingestion
+
+Bulk-load your existing docs, notes, or exported conversations:
 
 ```bash
-# Ingest a directory of markdown/text files
-python -m ember_memory.ingest /path/to/your/docs
+# Ingest a directory — subdirectories become collections automatically
+python -m ember_memory.ingest ./my-docs
+# my-docs/
+#   architecture/    -> collection: "architecture"
+#   debugging/       -> collection: "debugging"
+#   notes.md         -> collection: "general"
 
-# Into a specific collection
-python -m ember_memory.ingest /path/to/notes --collection project-notes
+# Force everything into one collection
+python -m ember_memory.ingest ./my-docs --collection my-project
 
 # Only process new/changed files
-python -m ember_memory.ingest /path/to/docs --sync
+python -m ember_memory.ingest ./my-docs --sync
 ```
 
-### 6. Start chatting
-
-That's it. Memories automatically appear in context when relevant. You can also use the MCP tools directly:
-
-- **"Remember that we decided to use PostgreSQL for the user service"** — your AI partner calls `memory_store`
-- **"What do we know about the auth system?"** — `memory_find` searches semantically
-- **"List my memory collections"** — `list_collections` shows what's stored
+**Tip:** If you export chats from AI platforms, you can ingest them here to turn past conversations into searchable project knowledge. [CinderACE](https://kindledflamestudios.com) supports 14 platforms if you need an exporter.
 
 ## MCP Tools
 
-| Tool | Description |
+Your AI can interact with memory directly:
+
+| Tool | What it does |
 |------|-------------|
 | `memory_store` | Save a memory with optional tags and source |
 | `memory_find` | Semantic search across one or all collections |
-| `memory_update` | Update existing memory (preserves metadata) |
+| `memory_update` | Update an existing memory |
 | `memory_delete` | Remove a memory by ID |
 | `list_collections` | Show all collections and entry counts |
-| `create_collection` | Create a new topic collection |
-| `delete_collection` | Remove a collection (requires confirmation) |
+| `create_collection` | Create a new collection (shared or AI-private) |
+| `delete_collection` | Remove a collection |
 | `collection_stats` | View stats and sample entries |
 
-## Auto-Retrieval Hook
+## Storage Backends
 
-The hook fires on every `UserPromptSubmit` event:
+Pick your database. Install only what you use.
 
-1. Takes your message text
-2. Searches all collections via bge-m3 embeddings
-3. Filters by similarity threshold (default: 0.45)
-4. Injects the top results into context as `<ember-memory>` tags
+| Backend | Install | Type |
+|---------|---------|------|
+| **ChromaDB** (default) | `pip install -e .` | In-process, zero config |
+| **LanceDB** | `pip install -e ".[lancedb]"` | In-process, Rust-fast |
+| **SQLite-vec** | `pip install -e ".[sqlite-vec]"` | In-process, ultra-minimal |
+| **Qdrant** | `pip install -e ".[qdrant]"` | Server, hybrid search |
+| **Weaviate** | `pip install -e ".[weaviate]"` | Server/cloud, teams |
+| **Milvus** | `pip install -e ".[milvus]"` | Server/cloud, enterprise |
+| **Pinecone** | `pip install -e ".[pinecone]"` | Cloud, serverless |
+| **pgvector** | `pip install -e ".[pgvector]"` | PostgreSQL extension |
 
-Your AI partner sees relevant memories without you asking. It just knows.
+Already have Qdrant running? Point Ember Memory at it. Prefer zero dependencies? ChromaDB works out of the box.
+
+## Embedding Providers
+
+| Provider | Model | Cost |
+|----------|-------|------|
+| **Ollama** (default) | bge-m3 | Free, local |
+| **OpenAI** | text-embedding-3-small | ~$0.02/1M tokens |
+| **Google** | text-embedding-004 | Generous free tier |
+
+Ollama is the default — free, local, private. OpenAI and Google work with an API key if you prefer cloud embeddings.
 
 ## Configuration
 
-All settings via environment variables — no config files to manage:
+All settings via environment variables or `~/.ember-memory/config.env`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `EMBER_BACKEND` | `chromadb` | Storage backend |
 | `EMBER_DATA_DIR` | `~/.ember-memory` | Where data is stored |
 | `EMBER_EMBEDDING_PROVIDER` | `ollama` | Embedding provider |
-| `EMBER_EMBEDDING_MODEL` | `bge-m3` | Embedding model name |
-| `EMBER_OLLAMA_URL` | `http://localhost:11434/api/embeddings` | Ollama endpoint |
-| `EMBER_DEFAULT_COLLECTION` | `general` | Default collection name |
-| `EMBER_SEARCH_LIMIT` | `10` | Max results for tool searches |
 | `EMBER_SIMILARITY_THRESHOLD` | `0.45` | Min similarity for auto-retrieval |
-| `EMBER_MAX_HOOK_RESULTS` | `5` | Max results injected per message |
-| `EMBER_MAX_PREVIEW_CHARS` | `800` | Max chars per memory in hook output |
-| `EMBER_HOOK_DEBUG` | `false` | Enable hook debug logging |
-| `EMBER_CONTEXT_TAG` | `ember-memory` | XML tag name for injected context |
+| `EMBER_MAX_HOOK_RESULTS` | `5` | Results injected per message |
+| `EMBER_WEIGHT_SIMILARITY` | `0.40` | Scoring weight: semantic match |
+| `EMBER_WEIGHT_HEAT` | `0.25` | Scoring weight: heat/recency |
+| `EMBER_WEIGHT_CONNECTION` | `0.20` | Scoring weight: co-occurrence |
+| `EMBER_WEIGHT_DECAY` | `0.15` | Scoring weight: freshness |
 
-## Ingestion
+Most users never touch these. The defaults are calibrated from real usage and testing.
 
-The ingestion pipeline chunks markdown files by headers and stores them with content-hash IDs (so re-ingesting won't duplicate).
+## Privacy
 
-```bash
-# Ingest everything in a directory
-python -m ember_memory.ingest ./my-docs
+**Ollama (default):** Zero network requests. Everything runs locally. Your memories never leave your machine.
 
-# Files in subdirectories auto-map to collections by folder name
-# my-docs/
-#   architecture/    → collection: "architecture"
-#   debugging/       → collection: "debugging"
-#   notes.md         → collection: "general"
-
-# Force all files into one collection
-python -m ember_memory.ingest ./my-docs --collection my-project
-
-# Sync mode — only re-process changed files
-python -m ember_memory.ingest ./my-docs --sync
-
-# Rebuild a collection from scratch
-python -m ember_memory.ingest --rebuild my-collection
-```
-
-## Adding More Backends
-
-Ember Memory is designed for multiple storage backends. To add one:
-
-1. Create `ember_memory/backends/your_backend.py`
-2. Implement the `MemoryBackend` abstract class (see `base.py`)
-3. Register it in `loader.py`
-
-The embedding layer is also swappable — same pattern in `ember_memory/embeddings/`.
-
-**Planned backends:**
-- Qdrant (for users who want a dedicated vector DB)
-
-## Project Structure
-
-```
-ember-memory/
-  ember_memory/
-    __init__.py          # Package + version
-    config.py            # All configuration (env vars)
-    server.py            # MCP server (the tools)
-    hook.py              # Auto-retrieval hook
-    ingest.py            # Ingestion pipeline
-    backends/
-      base.py            # Abstract backend interface
-      chromadb_backend.py  # ChromaDB implementation
-      loader.py          # Backend factory
-    embeddings/
-      loader.py          # Embedding function factory
-  scripts/
-    setup.py             # Interactive setup script
-  README.md
-```
+**OpenAI / Google:** Embedding text is sent to their APIs for vectorization. Memory content is always stored locally regardless of provider. Your choice of provider determines the network profile.
 
 ## Why "Ember"?
 
-A flame that persists. Memory that carries forward. Built by [Kindled Flame Studios](https://kindledflamestudios.com) — because every AI deserves to remember.
+A flame that persists. Memory that carries forward.
+
+Built by [Kindled Flame Studios](https://kindledflamestudios.com) — we build tools for people who believe AI relationships matter. Whether that's a coding partner that remembers your architecture, or a conversation history that deserves to be preserved.
+
+**More from KFS:**
+- [CinderACE](https://kindledflamestudios.com) — Export AI conversations from 14 platforms. Full thinking extraction, 7 formats, one click.
+- **CinderVOX** — Universal TTS/STT with voice cloning. Coming soon.
 
 ## License
 
 MIT
+
+---
+
+*538 tests. 8 backends. 3 embedding providers. Game-AI scoring. And it's free.*
+
+*Because every AI deserves to remember.*
