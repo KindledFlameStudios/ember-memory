@@ -47,6 +47,7 @@ def load_config():
         "embedding_model": "bge-m3",
         "ollama_url": "http://localhost:11434/api/embeddings",
         "openai_key": "",
+        "google_key": "",
         "default_collection": "general",
         "similarity_threshold": "0.45",
         "max_results": "5",
@@ -80,6 +81,8 @@ def save_config(config):
         f"EMBER_EMBEDDING_PROVIDER={config['embedding_provider']}",
         f"EMBER_EMBEDDING_MODEL={config['embedding_model']}",
         f"EMBER_OLLAMA_URL={config['ollama_url']}",
+        f"EMBER_OPENAI_API_KEY={config.get('openai_key', '')}",
+        f"EMBER_GOOGLE_API_KEY={config.get('google_key', '')}",
         f"EMBER_DEFAULT_COLLECTION={config['default_collection']}",
         f"EMBER_SIMILARITY_THRESHOLD={config['similarity_threshold']}",
         f"EMBER_MAX_HOOK_RESULTS={config['max_results']}",
@@ -262,42 +265,82 @@ class EmberAPI:
         except Exception as e:
             errors.append(f"Hook: {e}")
 
+        # 4. Gemini CLI — register hook + MCP if installed
+        if shutil.which("gemini"):
+            try:
+                gemini_settings = os.path.expanduser("~/.gemini/settings.json")
+                gemini_hook_path = os.path.join(EMBER_ROOT, "integrations", "gemini_cli", "hook.py")
+                gs = {}
+                if os.path.exists(gemini_settings):
+                    with open(gemini_settings, 'r') as f:
+                        gs = json.load(f)
+
+                # MCP server
+                if "mcpServers" not in gs:
+                    gs["mcpServers"] = {}
+                gs["mcpServers"]["ember-memory"] = {
+                    "command": sys.executable,
+                    "args": ["-m", "ember_memory.server"],
+                    "timeout": 30000
+                }
+
+                # BeforeAgent hook
+                if "hooks" not in gs:
+                    gs["hooks"] = {}
+                if "BeforeAgent" not in gs["hooks"]:
+                    gs["hooks"]["BeforeAgent"] = []
+
+                # Check if ember hook already exists
+                ember_exists = False
+                for entry in gs["hooks"]["BeforeAgent"]:
+                    if isinstance(entry, dict):
+                        for h in entry.get("hooks", []):
+                            if "ember" in h.get("name", "").lower() or "ember" in h.get("command", "").lower():
+                                h["command"] = f"{sys.executable} {gemini_hook_path}"
+                                ember_exists = True
+
+                if not ember_exists:
+                    gs["hooks"]["BeforeAgent"].append({
+                        "matcher": "*",
+                        "hooks": [{
+                            "name": "ember-memory",
+                            "type": "command",
+                            "command": f"{sys.executable} {gemini_hook_path}",
+                            "timeout": 3000
+                        }]
+                    })
+
+                os.makedirs(os.path.dirname(gemini_settings), exist_ok=True)
+                with open(gemini_settings, 'w') as f:
+                    json.dump(gs, f, indent=2)
+            except Exception as e:
+                errors.append(f"Gemini CLI: {e}")
+
         if errors:
             return {"ok": False, "msg": "; ".join(errors)}
         return {"ok": True, "msg": "Installed! Restart Claude Code to activate."}
 
     def get_collections(self):
-        cfg = load_config()
-        data_dir = cfg.get("data_dir", DEFAULT_DATA_DIR)
-        if not os.path.isdir(data_dir):
-            return {"ok": False, "collections": [], "msg": "Data directory not found"}
-
+        """List all collections with counts — uses v2 backend."""
         try:
-            import chromadb
-            client = chromadb.PersistentClient(path=data_dir)
-            collections = []
-            for col_obj in client.list_collections():
-                name = col_obj.name if hasattr(col_obj, 'name') else str(col_obj)
-                col = client.get_collection(name)
-                collections.append({"name": name, "count": col.count()})
+            from ember_memory.core.backends.loader import get_backend_v2
+            backend = get_backend_v2()
+            collections = backend.list_collections()
             return {"ok": True, "collections": sorted(collections, key=lambda c: c["name"])}
-        except ImportError:
-            return {"ok": False, "collections": [], "msg": "ChromaDB not installed"}
         except Exception as e:
             return {"ok": False, "collections": [], "msg": str(e)}
 
-    def create_collection(self, name):
-        cfg = load_config()
+    def create_collection(self, name, scope="shared"):
+        """Create a collection with optional AI namespace."""
         try:
-            import chromadb
-            from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
-            client = chromadb.PersistentClient(path=cfg.get("data_dir", DEFAULT_DATA_DIR))
-            ef = OllamaEmbeddingFunction(
-                url=cfg.get("ollama_url", "http://localhost:11434/api/embeddings"),
-                model_name=cfg.get("embedding_model", "bge-m3"))
-            client.get_or_create_collection(name=name, embedding_function=ef,
-                                             metadata={"hnsw:space": "cosine"})
-            return {"ok": True, "msg": f"Collection '{name}' created"}
+            from ember_memory.core.backends.loader import get_backend_v2
+            from ember_memory.core.embeddings.loader import get_embedding_provider
+            from ember_memory.core.namespaces import resolve_collection_name
+            backend = get_backend_v2()
+            embedder = get_embedding_provider()
+            full_name = resolve_collection_name(name, scope)
+            backend.create_collection(full_name, dimension=embedder.dimension())
+            return {"ok": True, "msg": f"Collection '{full_name}' created"}
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
@@ -352,6 +395,106 @@ class EmberAPI:
         if result and len(result) > 0:
             return {"ok": True, "path": result[0]}
         return {"ok": False, "path": ""}
+
+    def get_engine_stats(self):
+        """Get Ember Engine dashboard data."""
+        try:
+            from ember_memory.core.engine.state import EngineState
+            from ember_memory.core.engine.stats import get_engine_stats
+            cfg = load_config()
+            data_dir = cfg.get("data_dir", DEFAULT_DATA_DIR)
+            db_path = os.path.join(data_dir, "engine", "engine.db")
+            if not os.path.exists(db_path):
+                return {"ok": True, "stats": {
+                    "tick_count": 0, "total_memories_tracked": 0,
+                    "hot_memories": 0, "total_connections": 0,
+                    "established_connections": 0, "heat_mode": "universal",
+                    "ignored_clis": {"claude": False, "gemini": False, "codex": False}
+                }}
+            state = EngineState(db_path=db_path)
+            return {"ok": True, "stats": get_engine_stats(state)}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def get_heat_map(self):
+        """Get all heat values for visualization."""
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            if not os.path.exists(db_path):
+                return {"ok": True, "heat": {}}
+            state = EngineState(db_path=db_path)
+            return {"ok": True, "heat": state.get_all_heat()}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def get_connections(self):
+        """Get all connections for graph visualization."""
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            if not os.path.exists(db_path):
+                return {"ok": True, "connections": []}
+            state = EngineState(db_path=db_path)
+            conn = state._get_conn()
+            rows = conn.execute(
+                "SELECT id_a, id_b, strength FROM connections WHERE strength > 0.1 ORDER BY strength DESC LIMIT 100"
+            ).fetchall()
+            connections = [{"source": r[0], "target": r[1], "strength": r[2]} for r in rows]
+            return {"ok": True, "connections": connections}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def set_heat_mode(self, mode):
+        """Set heat mode: 'universal' or 'per-cli'."""
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            state = EngineState(db_path=db_path)
+            state.set_config("heat_mode", mode)
+            return {"ok": True, "msg": f"Heat mode set to {mode}"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def toggle_cli_ignore(self, ai_id):
+        """Toggle heat ignore for a specific CLI."""
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            state = EngineState(db_path=db_path)
+            current = state.get_config(f"heat_ignore_{ai_id}", "false")
+            new_val = "false" if current == "true" else "true"
+            state.set_config(f"heat_ignore_{ai_id}", new_val)
+            return {"ok": True, "ignored": new_val == "true"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def detect_clis(self):
+        """Detect which AI CLIs are installed."""
+        clis = {}
+        for name, binary in [("claude", "claude"), ("gemini", "gemini"), ("codex", "codex")]:
+            path = shutil.which(binary)
+            clis[name] = {"installed": path is not None, "path": path or ""}
+        return {"ok": True, "clis": clis}
+
+    def search_collection(self, collection, query, limit=5):
+        """Search within a specific collection."""
+        try:
+            from ember_memory.core.embeddings.loader import get_embedding_provider
+            from ember_memory.core.backends.loader import get_backend_v2
+            embedder = get_embedding_provider()
+            backend = get_backend_v2()
+            embedding = embedder.embed(query)
+            results = backend.search(collection, embedding, limit=limit)
+            return {"ok": True, "results": results}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
 
 
 # ── HTML Frontend ────────────────────────────────────────────────────────────
