@@ -97,6 +97,9 @@ def main():
         debug_log(f"INIT ERROR: {e}")
         sys.exit(0)
 
+    engine_db_path = os.path.join(config.DATA_DIR, "engine", "engine.db")
+    os.makedirs(os.path.dirname(engine_db_path), exist_ok=True)
+
     try:
         results = retrieve(
             prompt=clean_prompt,
@@ -105,6 +108,7 @@ def main():
             embedder=embedder,
             limit=config.MAX_HOOK_RESULTS,
             similarity_threshold=config.SIMILARITY_THRESHOLD,
+            engine_db_path=engine_db_path,
         )
         debug_log(f"retrieve() returned {len(results)} results")
     except Exception as e:
