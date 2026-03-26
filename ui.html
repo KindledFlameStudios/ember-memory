@@ -3,1027 +3,1439 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ember Memory</title>
+<title>Ember Memory Controller</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* ── KFS Design System ─────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;700&display=swap');
-
 :root {
-  /* Ember Palette — matched to kindledflamestudios.com */
-  --bg-void: #050505;
-  --bg-deep: #0a0908;
-  --bg-surface: #121010;
-  --bg-raised: #1a1510;
-  --bg-elevated: #221c14;
+  --bg-void:     #050505;
+  --bg-deep:     #0a0908;
+  --bg-surface:  #111010;
+  --bg-raised:   #191410;
+  --bg-elevated: #211c14;
 
-  /* Fire Accents */
-  --ember: #e8720c;
-  --ember-bright: #ff8a2e;
-  --ember-glow: #f4a644;
-  --ember-dim: #a85a0a;
-  --flame: #ff6b1a;
-  --coal: #3d2a14;
+  --ember:       #FF7820;
+  --ember-mid:   #FFA040;
+  --ember-glow:  #FFD080;
+  --ember-dim:   #a85a0a;
+  --ember-hot:   #FF4500;
+  --coal:        #3d2a14;
 
-  /* Text */
-  --fg: #e8ddd0;
-  --fg-dim: #a89880;
-  --fg-muted: #6b5d4f;
-  --fg-faint: #3d3530;
+  --fg:          #e8ddd0;
+  --fg-dim:      #a89880;
+  --fg-muted:    #6b5d4f;
+  --fg-faint:    #3a332b;
 
-  /* Status */
-  --success: #5ecc8a;
-  --error: #e86060;
-  --warning: #d4a030;
+  --success:     #5ecc8a;
+  --error:       #e86060;
+  --warning:     #d4a030;
 
-  /* Fonts */
-  --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --border:      #242018;
+  --border-em:   rgba(255,120,32,0.18);
+  --radius:      8px;
+  --radius-sm:   5px;
 
-  /* Structural */
-  --border: #2a2014;
-  --radius: 10px;
-  --radius-sm: 6px;
+  --font-ui:   -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
 }
 
-body {
-  font-family: var(--font-body);
+html, body {
+  height: 100%;
+  overflow: hidden;
   background: var(--bg-void);
   color: var(--fg);
-  font-size: 14px;
+  font-family: var(--font-ui);
+  font-size: 13px;
   line-height: 1.5;
-  overflow: hidden;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  user-select: none;
 }
 
-/* ── Header ─────────────────────────────────────────── */
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Header */
 .header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  padding: 11px 20px;
   background: var(--bg-deep);
-}
-.header h1 {
-  font-family: var(--font-display);
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ember-glow);
-  letter-spacing: -0.3px;
-}
-.header h1 span { color: var(--fg-dim); font-weight: 400; font-size: 13px; margin-left: 10px; }
-.status-dot {
-  display: inline-block;
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  margin-right: 6px;
-}
-.status-text { font-size: 12px; color: var(--fg-dim); }
-
-/* ── Tabs ───────────────────────────────────────────── */
-.tabs {
-  display: flex;
   border-bottom: 1px solid var(--border);
-  padding: 0 24px;
-  gap: 0;
-  background: var(--bg-deep);
+  flex-shrink: 0;
 }
-.tab {
-  padding: 10px 20px;
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fg-muted);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: all 0.2s;
-  user-select: none;
+.header-logo { display: flex; align-items: center; gap: 8px; }
+.logo-flame  { width: 26px; height: 26px; flex-shrink: 0; }
+.header-title {
+  font-size: 15px; font-weight: 700; letter-spacing: -0.3px;
+  background: linear-gradient(90deg, var(--ember-mid), var(--ember-glow));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
 }
-.tab:hover { color: var(--fg-dim); }
-.tab.active { color: var(--ember-glow); border-bottom-color: var(--ember); }
+.header-sub {
+  font-size: 11px; color: var(--fg-muted); margin-left: 4px;
+  -webkit-text-fill-color: var(--fg-muted);
+}
+.header-spacer { flex: 1; }
+.engine-pill {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px; background: var(--bg-raised);
+  border: 1px solid var(--border); border-radius: 20px;
+  font-size: 11px; color: var(--fg-muted);
+}
+.engine-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--fg-faint); transition: background 0.4s, box-shadow 0.4s;
+}
+.engine-dot.live { background: var(--ember); box-shadow: 0 0 8px rgba(255,120,32,0.6); }
 
-/* ── Content ────────────────────────────────────────── */
-.content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px 24px;
-  background: var(--bg-void);
+/* Tab bar */
+.tab-bar {
+  display: flex; background: var(--bg-deep);
+  border-bottom: 1px solid var(--border); padding: 0 20px; gap: 2px; flex-shrink: 0;
 }
+.tab-btn {
+  padding: 9px 18px; font-size: 12.5px; font-weight: 600; color: var(--fg-muted);
+  background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer;
+  transition: color 0.15s, border-color 0.15s; outline: none;
+}
+.tab-btn:hover { color: var(--fg-dim); }
+.tab-btn.active { color: var(--ember-glow); border-bottom-color: var(--ember); }
+
+/* Content */
+.content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 18px 20px; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
-/* ── Cards ──────────────────────────────────────────── */
-.card {
+/* Stat cards */
+.stat-row {
+  display: grid; grid-template-columns: repeat(5,1fr); gap: 10px; margin-bottom: 14px;
+}
+.stat-card {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px; transition: border-color 0.2s;
+}
+.stat-card:hover { border-color: var(--border-em); }
+.stat-card.clickable { cursor: pointer; }
+.stat-card.clickable:active { transform: scale(0.98); }
+.stat-label {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.6px; color: var(--fg-muted); margin-bottom: 6px;
+}
+.stat-value {
+  font-size: 22px; font-weight: 700; color: var(--fg);
+  font-family: var(--font-mono); letter-spacing: -0.5px;
+}
+.stat-value.hot { color: var(--ember-mid); text-shadow: 0 0 20px rgba(255,160,64,0.4); }
+.mode-badge {
+  display: inline-block; padding: 3px 8px; border-radius: 12px;
+  font-size: 11px; font-weight: 700; background: rgba(255,120,32,0.15);
+  color: var(--ember-mid); border: 1px solid rgba(255,120,32,0.25); margin-top: 2px;
+  cursor: pointer; text-transform: uppercase; letter-spacing: 0.4px; transition: background 0.2s;
+}
+.mode-badge:hover { background: rgba(255,120,32,0.25); }
+
+/* Panels */
+.panel {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden; margin-bottom: 14px;
+}
+.panel-hdr {
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.panel-hdr-title { font-size: 12px; font-weight: 700; color: var(--fg-dim); flex: 1; }
+.panel-body { padding: 14px; }
+
+/* Heat map */
+.heat-map-area { min-height: 180px; display: flex; flex-direction: column; gap: 4px; }
+.heat-bar-row { display: flex; align-items: center; gap: 8px; height: 20px; }
+.heat-bar-label {
+  font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
+  width: 140px; flex-shrink: 0; text-overflow: ellipsis; overflow: hidden;
+  white-space: nowrap; text-align: right;
+}
+.heat-bar-track {
+  flex: 1; height: 14px; background: var(--bg-raised); border-radius: 3px; overflow: hidden;
+}
+.heat-bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+.heat-bar-val {
+  font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
+  width: 36px; flex-shrink: 0; text-align: right;
+}
+
+/* Connection graph */
+#conn-svg { width: 100%; height: 260px; display: block; }
+.conn-graph-wrap { background: var(--bg-raised); border-radius: 6px; overflow: hidden; }
+
+/* Empty / loading states */
+.empty-state { text-align: center; padding: 32px 20px; color: var(--fg-muted); font-size: 12px; line-height: 1.7; }
+.empty-icon { font-size: 24px; margin-bottom: 8px; opacity: 0.4; }
+.loading-text { color: var(--fg-muted); font-size: 11px; display: flex; align-items: center; gap: 7px; padding: 16px; }
+
+/* Collections */
+.section-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--fg-muted); }
+.col-list { display: flex; flex-direction: column; gap: 6px; }
+.col-item {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 14px;
+  cursor: pointer; transition: border-color 0.15s, background 0.15s;
+  flex-wrap: wrap;
+}
+.col-item:hover { border-color: var(--border-em); background: var(--bg-raised); }
+.col-item.expanded { border-color: rgba(255,120,32,0.3); }
+.col-item-name { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--fg); flex: 1; }
+.col-item-count { font-size: 11px; color: var(--fg-muted); font-family: var(--font-mono); background: var(--bg-elevated); padding: 2px 8px; border-radius: 10px; }
+.col-search-area { border-top: 1px solid var(--border); padding: 12px 14px 14px; display: none; width: 100%; }
+.col-search-area.visible { display: block; }
+.search-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.search-results { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+.search-result-item { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 5px; padding: 8px 10px; font-size: 11.5px; }
+.search-result-id { font-family: var(--font-mono); font-size: 10px; color: var(--ember-mid); margin-bottom: 3px; }
+.search-result-text { color: var(--fg-dim); line-height: 1.5; }
+.search-result-score { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); margin-top: 3px; }
+
+/* Create form */
+.create-form {
+  display: none; background: var(--bg-raised); border: 1px solid var(--border-em);
+  border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px;
+}
+.create-form.visible { display: block; }
+.form-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* CinderACE promo */
+.promo-card {
+  border: 1px solid rgba(255,120,32,0.22);
+  background: linear-gradient(135deg, rgba(255,120,32,0.05), rgba(255,160,64,0.03));
+  border-radius: var(--radius); padding: 12px 16px; margin-top: 18px;
+  display: flex; align-items: center; gap: 14px;
+}
+.promo-icon { font-size: 20px; flex-shrink: 0; opacity: 0.8; }
+.promo-text { flex: 1; font-size: 12px; color: var(--fg-dim); line-height: 1.6; }
+.promo-text strong { color: var(--ember-mid); }
+.promo-link { font-size: 11px; color: var(--ember); text-decoration: none; display: block; margin-top: 3px; cursor: pointer; }
+.promo-link:hover { color: var(--ember-glow); }
+
+/* Settings */
+.settings-section { margin-bottom: 20px; }
+.settings-section-title {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.7px; color: var(--fg-muted); margin-bottom: 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
+.provider-cards { display: flex; gap: 8px; margin-bottom: 8px; }
+.provider-card {
+  flex: 1; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
   background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 18px 20px;
-  margin-bottom: 14px;
 }
-.card:hover {
-  border-color: rgba(232, 114, 12, 0.15);
+.provider-card:hover { border-color: var(--border-em); background: var(--bg-raised); }
+.provider-card.selected { border-color: var(--ember); background: rgba(255,120,32,0.06); }
+.provider-name { font-size: 13px; font-weight: 600; color: var(--fg); margin-bottom: 2px; }
+.provider-desc { font-size: 11px; color: var(--fg-muted); }
+.provider-card.selected .provider-name { color: var(--ember-mid); }
+.setting-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
 }
-.card h3 {
-  font-family: var(--font-display);
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 2px;
-  color: var(--fg);
-}
-.card .subtitle {
-  font-size: 12px;
-  color: var(--fg-dim);
-  margin-bottom: 14px;
-}
+.setting-row:last-child { border-bottom: none; }
+.setting-label { font-size: 12.5px; color: var(--fg); }
+.setting-hint { font-size: 11px; color: var(--fg-muted); margin-top: 1px; }
+.ollama-status { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-muted); transition: background 0.3s, box-shadow 0.3s; }
+.status-dot.ok  { background: var(--success); box-shadow: 0 0 6px rgba(94,204,138,0.5); }
+.status-dot.err { background: var(--error); }
 
-/* ── Form Elements ──────────────────────────────────── */
-.field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 0;
-}
-.field label {
-  font-size: 13px;
-  color: var(--fg);
-  white-space: nowrap;
-}
-.field-hint {
-  font-size: 11px;
-  color: var(--fg-muted);
-  padding: 2px 0 8px;
-}
+/* CLI cards */
+.cli-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 14px; }
+.cli-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; transition: border-color 0.2s; }
+.cli-card:hover { border-color: var(--border-em); }
+.cli-name { font-size: 14px; font-weight: 700; color: var(--fg); margin-bottom: 4px; }
+.cli-path { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); margin-bottom: 12px; word-break: break-all; min-height: 14px; }
+.cli-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; font-size: 10.5px; font-weight: 600; }
+.badge-ok   { background: rgba(94,204,138,0.12); color: var(--success); }
+.badge-err  { background: rgba(232,96,96,0.12);  color: var(--error); }
+.badge-warn { background: rgba(212,160,48,0.12); color: var(--warning); }
+.toggle-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--fg-dim); margin-top: 6px; cursor: pointer; }
+.toggle { position: relative; width: 32px; height: 17px; flex-shrink: 0; }
+.toggle input { display: none; }
+.toggle-track { position: absolute; inset: 0; background: var(--bg-elevated); border-radius: 9px; border: 1px solid var(--border); transition: background 0.2s; }
+.toggle input:checked + .toggle-track { background: rgba(255,120,32,0.3); border-color: var(--ember-dim); }
+.toggle-thumb { position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--fg-muted); transition: transform 0.2s, background 0.2s; pointer-events: none; }
+.toggle input:checked ~ .toggle-thumb { transform: translateX(15px); background: var(--ember); }
 
-input[type="text"], input[type="password"] {
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg);
-  padding: 8px 12px;
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
-  transition: border-color 0.2s;
+/* Inputs */
+input[type="text"], input[type="password"], input[type="number"] {
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--fg); padding: 7px 11px; font-size: 12.5px; font-family: inherit; outline: none; transition: border-color 0.15s;
 }
 input:focus { border-color: var(--ember); }
-input.wide { width: 320px; }
-input.medium { width: 200px; }
-
+input.wide { width: 260px; }
+input.medium { width: 160px; }
+input.fluid { flex: 1; min-width: 80px; }
 select {
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--ember-glow);
-  padding: 7px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  font-family: inherit;
-  outline: none;
-  cursor: pointer;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23f4a644' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  padding-right: 28px;
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--ember-glow); padding: 7px 28px 7px 11px; font-size: 12.5px; font-weight: 600;
+  font-family: inherit; outline: none; cursor: pointer; -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffa040' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; color-scheme: dark;
 }
 select:focus { border-color: var(--ember); }
-select, select option { color-scheme: dark; }
-select option {
-  background: var(--bg-raised);
-  color: var(--ember-glow);
-  padding: 8px;
-  font-weight: 600;
-}
+select option { background: var(--bg-raised); color: var(--ember-glow); }
 
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  background: var(--bg-raised);
-  border-radius: 4px;
-  height: 6px;
-  width: 180px;
-  outline: none;
-}
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px; height: 16px;
-  border-radius: 50%;
-  background: var(--ember);
-  cursor: pointer;
-  box-shadow: 0 0 8px rgba(232, 114, 12, 0.4);
-}
-
-/* ── Combo Box (type-to-create + dropdown) ─────────── */
-.combo-box {
-  position: relative;
-  display: inline-block;
-}
-.combo-box input {
-  padding-right: 28px;
-}
-.combo-box .combo-arrow {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 12px;
-  height: 12px;
-  pointer-events: none;
-  opacity: 0.6;
-}
-.combo-box .combo-arrow path { fill: var(--ember-glow); }
-.combo-dropdown {
-  display: none;
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: var(--bg-raised);
-  border: 1px solid var(--coal);
-  border-radius: var(--radius-sm);
-  margin-top: 2px;
-  max-height: 180px;
-  overflow-y: auto;
-  z-index: 50;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-}
-.combo-dropdown.open { display: block; }
-.combo-option {
-  padding: 7px 12px;
-  font-size: 13px;
-  color: var(--fg);
-  cursor: pointer;
-  transition: background 0.1s;
-}
-.combo-option:hover {
-  background: var(--bg-elevated);
-  color: var(--ember-glow);
-}
-.combo-option .combo-count {
-  float: right;
-  color: var(--fg-muted);
-  font-size: 11px;
-}
-.combo-hint {
-  padding: 6px 12px;
-  font-size: 11px;
-  color: var(--fg-muted);
-  border-top: 1px solid var(--border);
-  font-style: italic;
-}
-
-/* ── Buttons ────────────────────────────────────────── */
+/* Buttons */
 .btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 8px 18px;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-  gap: 6px;
+  display: inline-flex; align-items: center; gap: 5px; padding: 7px 16px;
+  border: none; border-radius: var(--radius-sm); font-family: inherit; font-size: 12.5px;
+  font-weight: 600; cursor: pointer; transition: all 0.15s; outline: none;
 }
-.btn-primary {
-  background: var(--ember);
-  color: #050505;
-}
-.btn-primary:hover {
-  background: var(--ember-bright);
-  box-shadow: 0 0 16px rgba(232, 114, 12, 0.3);
-}
-.btn-secondary { background: var(--bg-elevated); color: var(--fg); }
-.btn-secondary:hover { background: var(--coal); }
-.btn-danger { background: var(--error); color: var(--fg); }
-.btn-danger:hover { background: #f07070; }
-.btn-sm { padding: 5px 12px; font-size: 12px; }
+.btn-primary { background: var(--ember); color: #050505; }
+.btn-primary:hover { background: var(--ember-mid); box-shadow: 0 0 14px rgba(255,120,32,0.35); }
+.btn-secondary { background: var(--bg-elevated); color: var(--fg); border: 1px solid var(--border); }
+.btn-secondary:hover { background: var(--coal); border-color: var(--border-em); }
+.btn-danger { background: rgba(232,96,96,0.12); color: var(--error); border: 1px solid rgba(232,96,96,0.2); }
+.btn-danger:hover { background: rgba(232,96,96,0.22); }
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 
-/* ── Status badges ──────────────────────────────────── */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 10px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 600;
-  gap: 5px;
-}
-.badge-ok { background: rgba(94,204,138,0.15); color: var(--success); }
-.badge-warn { background: rgba(212,160,48,0.15); color: var(--warning); }
+/* Card (settings) */
+.card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; }
 
-/* ── Check rows ─────────────────────────────────────── */
-.check-row {
-  display: flex;
-  align-items: center;
-  padding: 6px 0;
-  gap: 10px;
-}
-.check-row .icon { font-size: 16px; width: 20px; text-align: center; }
-.check-row .label { font-size: 13px; }
-.check-row .detail { font-size: 12px; color: var(--fg-dim); margin-left: auto; }
-
-/* ── Collection table ───────────────────────────────── */
-.col-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 8px 0;
-}
-.col-table th {
-  text-align: left;
-  font-family: var(--font-display);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--fg-muted);
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
-}
-.col-table td {
-  padding: 8px 12px;
-  font-size: 13px;
-  border-bottom: 1px solid var(--border);
-}
-.col-table tr:hover td { background: var(--bg-raised); }
-.col-table tr.selected td { background: rgba(232,114,12,0.1); }
-.col-table tr { cursor: pointer; }
-.col-table .count { color: var(--fg-dim); text-align: right; }
-.col-table .total-row td {
-  font-weight: 600;
-  color: var(--fg-dim);
-  border-bottom: none;
-  cursor: default;
-}
-
-/* ── Ingest section ─────────────────────────────────── */
-.ingest-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.ingest-row input { flex: 1; }
-
-/* ── Toast ──────────────────────────────────────────── */
+/* Toast */
 .toast {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  padding: 10px 18px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 500;
-  opacity: 0;
-  transform: translateY(10px);
-  transition: all 0.3s;
-  z-index: 100;
+  position: fixed; bottom: 18px; right: 18px; padding: 9px 16px;
+  border-radius: var(--radius-sm); font-size: 12px; font-weight: 500;
+  opacity: 0; transform: translateY(8px); transition: opacity 0.25s, transform 0.25s;
+  z-index: 200; pointer-events: none; max-width: 320px;
 }
 .toast.show { opacity: 1; transform: translateY(0); }
-.toast.ok { background: rgba(94,204,138,0.2); color: var(--success); border: 1px solid rgba(94,204,138,0.3); }
-.toast.err { background: rgba(232,96,96,0.2); color: var(--error); border: 1px solid rgba(232,96,96,0.3); }
+.toast.ok  { background: rgba(94,204,138,0.15); color: var(--success); border: 1px solid rgba(94,204,138,0.25); }
+.toast.err { background: rgba(232,96,96,0.15);  color: var(--error);   border: 1px solid rgba(232,96,96,0.25); }
+.toast.inf { background: rgba(255,120,32,0.12); color: var(--ember-mid); border: 1px solid rgba(255,120,32,0.2); }
 
-/* ── Footer ─────────────────────────────────────────── */
-.footer {
-  padding: 10px 24px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  color: var(--fg-muted);
-  background: var(--bg-deep);
-}
+/* Refresh badge */
+.refresh-badge { font-size: 10px; color: var(--fg-faint); }
 
-/* ── Radio styling ──────────────────────────────────── */
-input[type="radio"] {
-  accent-color: var(--ember);
-}
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--coal); }
 
-/* ── Scrollbar ──────────────────────────────────────── */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg-void); }
-::-webkit-scrollbar-thumb { background: var(--coal); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--ember-dim); }
-
-/* ── Selection ──────────────────────────────────────── */
-::selection {
-  background-color: rgba(232, 114, 12, 0.3);
-  color: #e8ddd0;
-}
+/* Spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--ember); border-radius: 50%; animation: spin 0.7s linear infinite; }
 </style>
 </head>
 <body>
 
-<!-- Header -->
-<div class="header">
-  <h1>Ember Memory <span>Persistent AI Memory</span></h1>
-  <div id="header-status">
-    <span class="status-dot" style="background:var(--warning)"></span>
-    <span class="status-text">Checking...</span>
-  </div>
-</div>
+<div class="shell">
 
-<!-- Tabs -->
-<div class="tabs">
-  <div class="tab active" data-tab="general">General</div>
-  <div class="tab" data-tab="providers">Providers</div>
-  <div class="tab" data-tab="collections">Collections</div>
-  <div class="tab" data-tab="setup">Setup</div>
-</div>
-
-<!-- Content -->
-<div class="content">
-
-  <!-- General Tab -->
-  <div id="general" class="tab-panel active">
-    <div class="card">
-      <h3>Data Directory</h3>
-      <p class="subtitle">Where memory data is stored on disk</p>
-      <div class="ingest-row">
-        <input type="text" id="data-dir" class="wide">
-        <button class="btn btn-secondary btn-sm" onclick="browseDataDir()">Browse</button>
-      </div>
+  <!-- Header -->
+  <div class="header">
+    <div class="header-logo">
+      <svg class="logo-flame" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M13 2C13 2 7 8 7 14C7 17.3 9.7 20 13 20C16.3 20 19 17.3 19 14C19 8 13 2 13 2Z" fill="url(#fg1)"/>
+        <path d="M13 10C13 10 10 13.5 10 16C10 17.6 11.3 19 13 19C14.7 19 16 17.6 16 16C16 13.5 13 10 13 10Z" fill="url(#fg2)"/>
+        <defs>
+          <linearGradient id="fg1" x1="13" y1="2" x2="13" y2="20" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#FFD080"/>
+            <stop offset="100%" stop-color="#FF7820"/>
+          </linearGradient>
+          <linearGradient id="fg2" x1="13" y1="10" x2="13" y2="19" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#fff" stop-opacity="0.9"/>
+            <stop offset="100%" stop-color="#FFA040"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span class="header-title">Ember Memory</span>
+      <span class="header-sub">Controller v2</span>
     </div>
-
-    <div class="card">
-      <h3>Retrieval Settings</h3>
-      <p class="subtitle">Controls how memories are matched and returned</p>
-
-      <div class="field">
-        <label>Default Collection</label>
-        <div class="combo-box" id="default-col-combo">
-          <input type="text" id="default-collection" class="medium" placeholder="general">
-          <svg class="combo-arrow" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4"/></svg>
-          <div class="combo-dropdown" id="default-col-dropdown"></div>
-        </div>
-      </div>
-
-      <div class="field">
-        <label>Similarity Threshold</label>
-        <div style="display:flex;align-items:center;gap:10px">
-          <input type="range" id="threshold" min="0.20" max="0.80" step="0.01">
-          <span id="threshold-val" style="color:var(--ember-glow);font-weight:600;min-width:35px">0.45</span>
-        </div>
-      </div>
-      <p class="field-hint">Lower = more results (noisier) | Higher = fewer (stricter)</p>
-
-      <div class="field">
-        <label>Max Results Per Message</label>
-        <select id="max-results">
-          <option>3</option><option selected>5</option><option>7</option><option>10</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label>Preview Length (chars)</label>
-        <select id="max-preview">
-          <option>400</option><option>600</option><option selected>800</option><option>1200</option>
-        </select>
-      </div>
-    </div>
-
-    <div style="text-align:right">
-      <button class="btn btn-primary" onclick="saveGeneral()">Save Settings</button>
+    <div class="header-spacer"></div>
+    <div class="engine-pill">
+      <div class="engine-dot" id="engineDot"></div>
+      <span id="enginePillLabel">Engine</span>
     </div>
   </div>
 
-  <!-- Providers Tab -->
-  <div id="providers" class="tab-panel">
-    <div class="card">
-      <h3>Storage Backend</h3>
-      <p class="subtitle">Where vector embeddings are persisted</p>
-      <div class="check-row">
-        <input type="radio" name="backend" value="chromadb" checked>
-        <span class="label"><strong>ChromaDB</strong> — Embedded, zero-config</span>
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+    <button class="tab-btn" data-tab="collections">Collections</button>
+    <button class="tab-btn" data-tab="settings">Settings</button>
+    <button class="tab-btn" data-tab="cli">CLI Status</button>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+
+    <!-- ═══════════ DASHBOARD ═══════════ -->
+    <div class="tab-panel active" id="tab-dashboard">
+
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="stat-label">Memories Tracked</div>
+          <div class="stat-value" id="stat-memories">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Hot Memories</div>
+          <div class="stat-value" id="stat-hot">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Connections</div>
+          <div class="stat-value" id="stat-connections">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Engine Ticks</div>
+          <div class="stat-value" id="stat-ticks">—</div>
+        </div>
+        <div class="stat-card clickable" id="heatModeCard" title="Click to toggle heat mode">
+          <div class="stat-label">Heat Mode</div>
+          <div class="mode-badge" id="heatModeBadge">—</div>
+        </div>
       </div>
-      <div class="check-row" style="opacity:0.4">
-        <input type="radio" name="backend" value="qdrant" disabled>
-        <span class="label"><strong>Qdrant</strong> — Coming soon</span>
+
+      <div class="panel">
+        <div class="panel-hdr">
+          <div class="panel-hdr-title">Memory Heat Map</div>
+          <span class="refresh-badge" id="heatRefreshTime"></span>
+        </div>
+        <div class="panel-body">
+          <div class="heat-map-area" id="heatMapArea">
+            <div class="loading-text"><div class="spinner"></div> Loading heat data...</div>
+          </div>
+        </div>
       </div>
+
+      <div class="panel">
+        <div class="panel-hdr">
+          <div class="panel-hdr-title">Connection Graph</div>
+          <span class="refresh-badge" id="connRefreshTime"></span>
+        </div>
+        <div class="panel-body" style="padding:0;">
+          <div class="conn-graph-wrap" id="connGraphWrap">
+            <svg id="conn-svg">
+              <defs>
+                <radialGradient id="nodeGrad" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#FFA040" stop-opacity="0.9"/>
+                  <stop offset="100%" stop-color="#FF7820" stop-opacity="0.6"/>
+                </radialGradient>
+              </defs>
+              <g id="conn-edges"></g>
+              <g id="conn-nodes"></g>
+            </svg>
+          </div>
+          <div id="connEmptyState" style="display:none;" class="empty-state">
+            <div class="empty-icon">&#9673;</div>
+            Connections emerge as topics co-occur in your work
+          </div>
+        </div>
+      </div>
+
     </div>
 
-    <div class="card">
-      <h3>Embedding Model</h3>
-      <p class="subtitle">How text is encoded into vectors for semantic search</p>
-      <div class="check-row">
-        <input type="radio" name="embed-provider" value="ollama" checked>
-        <span class="label"><strong>Ollama</strong> — Local, free, private</span>
-      </div>
-      <div class="check-row" style="opacity:0.4">
-        <input type="radio" name="embed-provider" value="openai" disabled>
-        <span class="label"><strong>OpenAI</strong> — Coming soon</span>
+    <!-- ═══════════ COLLECTIONS ═══════════ -->
+    <div class="tab-panel" id="tab-collections">
+
+      <div class="section-hdr">
+        <span class="section-title">Collections</span>
+        <button class="btn btn-primary btn-sm" id="btnCreateToggle">+ New Collection</button>
       </div>
 
-      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-        <div class="field">
-          <label>Model</label>
-          <select id="embed-model">
-            <option selected>bge-m3</option>
-            <option>nomic-embed-text</option>
-            <option>mxbai-embed-large</option>
-            <option>all-minilm</option>
+      <div class="create-form" id="createForm">
+        <div class="form-row">
+          <input type="text" class="fluid" id="newColName" placeholder="collection-name" />
+          <select id="newColScope">
+            <option value="shared">shared</option>
+            <option value="claude">claude</option>
+            <option value="gemini">gemini</option>
+            <option value="codex">codex</option>
           </select>
-        </div>
-        <div class="field">
-          <label>Ollama URL</label>
-          <input type="text" id="ollama-url" class="wide">
-        </div>
-        <div style="margin-top:10px;display:flex;align-items:center;gap:10px">
-          <button class="btn btn-secondary btn-sm" onclick="testOllama()">Test Connection</button>
-          <span id="ollama-status" style="font-size:12px;color:var(--fg-dim)"></span>
+          <button class="btn btn-primary btn-sm" id="btnCreateCol">Create</button>
+          <button class="btn btn-secondary btn-sm" id="btnCreateCancel">Cancel</button>
         </div>
       </div>
+
+      <div class="col-list" id="colList">
+        <div class="loading-text"><div class="spinner"></div> Loading collections...</div>
+      </div>
+
+      <div class="promo-card">
+        <div class="promo-icon">&#128293;</div>
+        <div class="promo-text">
+          Looking to grow your collections with clean data?
+          <strong>CinderACE</strong> exports AI conversations from 14 platforms — ready to ingest.
+          <a class="promo-link" id="promoLink">kindledflamestudios.com</a>
+        </div>
+      </div>
+
     </div>
 
-    <div style="text-align:right">
-      <button class="btn btn-primary" onclick="saveProviders()">Save Providers</button>
+    <!-- ═══════════ SETTINGS ═══════════ -->
+    <div class="tab-panel" id="tab-settings">
+
+      <div class="settings-section">
+        <div class="settings-section-title">Embedding Provider</div>
+        <div class="provider-cards">
+          <div class="provider-card" data-provider="ollama" id="prov-ollama">
+            <div class="provider-name">Ollama</div>
+            <div class="provider-desc">Local — no API key needed</div>
+          </div>
+          <div class="provider-card" data-provider="openai" id="prov-openai">
+            <div class="provider-name">OpenAI</div>
+            <div class="provider-desc">text-embedding-3-small</div>
+          </div>
+          <div class="provider-card" data-provider="google" id="prov-google">
+            <div class="provider-name">Google</div>
+            <div class="provider-desc">text-embedding-004</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">API Keys</div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">OpenAI API Key</div>
+              <div class="setting-hint">Required for OpenAI embeddings</div>
+            </div>
+            <input type="password" class="wide" id="keyOpenAI" placeholder="sk-..." />
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Google API Key</div>
+              <div class="setting-hint">Required for Google embeddings</div>
+            </div>
+            <input type="password" class="wide" id="keyGoogle" placeholder="AIza..." />
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Storage Backend</div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Vector Database</div>
+              <div class="setting-hint">Where embeddings are stored</div>
+            </div>
+            <select id="backendSelect">
+              <option value="chroma">ChromaDB</option>
+              <option value="qdrant">Qdrant</option>
+              <option value="weaviate">Weaviate</option>
+              <option value="pinecone">Pinecone</option>
+              <option value="pgvector">pgvector</option>
+              <option value="milvus">Milvus</option>
+              <option value="sqlite_vss">SQLite VSS</option>
+              <option value="in_memory">In-Memory</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Data Directory</div>
+              <div class="setting-hint">Where local data is stored</div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="text" class="wide" id="dataDir" />
+              <button class="btn btn-secondary btn-sm" id="btnBrowse">Browse</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Ollama Status</div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Connection</div>
+              <div class="setting-hint">Local Ollama instance</div>
+            </div>
+            <div class="ollama-status">
+              <div class="status-dot" id="ollamaStatusDot"></div>
+              <span id="ollamaStatusText">Checking...</span>
+              <button class="btn btn-secondary btn-sm" id="btnCheckOllama">Check</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Search Parameters</div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Similarity Threshold</div>
+              <div class="setting-hint">Minimum similarity score (0–1)</div>
+            </div>
+            <input type="number" class="medium" id="simThreshold" min="0" max="1" step="0.05" />
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Max Results</div>
+              <div class="setting-hint">Maximum number of search hits</div>
+            </div>
+            <input type="number" class="medium" id="maxResults" min="1" max="50" />
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Max Preview Chars</div>
+              <div class="setting-hint">Characters shown in result preview</div>
+            </div>
+            <input type="number" class="medium" id="maxPreviewChars" min="50" max="1000" />
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:6px;">
+        <button class="btn btn-primary" id="btnSaveSettings">Save Settings</button>
+      </div>
+
     </div>
+
+    <!-- ═══════════ CLI STATUS ═══════════ -->
+    <div class="tab-panel" id="tab-cli">
+
+      <div class="section-hdr" style="margin-bottom:12px;">
+        <span class="section-title">CLI Detection</span>
+        <button class="btn btn-primary btn-sm" id="btnInstallAll">Run Install</button>
+      </div>
+
+      <div class="cli-grid" id="cliGrid">
+        <div class="loading-text"><div class="spinner"></div> Detecting CLIs...</div>
+      </div>
+
+    </div>
+
   </div>
-
-  <!-- Collections Tab -->
-  <div id="collections" class="tab-panel">
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <h3>Collections</h3>
-        <button class="btn btn-secondary btn-sm" onclick="refreshCollections()">Refresh</button>
-      </div>
-      <p class="subtitle">Manage your memory collections</p>
-
-      <table class="col-table">
-        <thead><tr><th>Collection</th><th style="text-align:right">Entries</th></tr></thead>
-        <tbody id="col-body">
-          <tr><td colspan="2" style="color:var(--fg-muted)">Loading...</td></tr>
-        </tbody>
-      </table>
-
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="btn btn-secondary btn-sm" onclick="createCollection()">Create</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteCollection()">Delete</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>Ingest Content</h3>
-      <p class="subtitle">Embed files from a directory into collections</p>
-
-      <div class="ingest-row">
-        <label style="font-size:13px;min-width:75px">Source:</label>
-        <input type="text" id="ingest-dir">
-        <button class="btn btn-secondary btn-sm" onclick="browseIngestDir()">Browse</button>
-      </div>
-      <div class="ingest-row">
-        <label style="font-size:13px;min-width:75px">Collection:</label>
-        <div class="combo-box" id="ingest-col-combo" style="flex:1">
-          <input type="text" id="ingest-col" placeholder="Type to create or select existing">
-          <svg class="combo-arrow" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4"/></svg>
-          <div class="combo-dropdown" id="ingest-col-dropdown"></div>
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
-        <button class="btn btn-primary btn-sm" onclick="runIngest(false)">Ingest All</button>
-        <button class="btn btn-secondary btn-sm" onclick="runIngest(true)">Sync Only</button>
-        <span id="ingest-status" style="font-size:12px;color:var(--fg-dim)"></span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Setup Tab -->
-  <div id="setup" class="tab-panel">
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <h3>Prerequisites</h3>
-        <button class="btn btn-secondary btn-sm" onclick="checkPrereqs()">Re-check</button>
-      </div>
-      <p class="subtitle">System requirements for Ember Memory</p>
-      <div id="prereq-list"></div>
-    </div>
-
-    <div class="card">
-      <h3>Claude Code Integration</h3>
-      <p class="subtitle">MCP server and auto-retrieval hook registration</p>
-      <div id="integration-list"></div>
-
-      <div style="margin-top:14px;display:flex;align-items:center;gap:10px">
-        <button class="btn btn-primary" onclick="runInstall()">Install</button>
-        <span id="install-status" style="font-size:12px;color:var(--fg-dim)"></span>
-      </div>
-    </div>
-  </div>
-
 </div>
 
-<!-- Footer -->
-<div class="footer">
-  <span>Kindled Flame Studios</span>
-  <span>Because every AI deserves to remember</span>
-</div>
-
-<!-- Toast -->
-<div id="toast" class="toast"></div>
+<div class="toast" id="toast"></div>
 
 <script>
-// ── Cached collections for combo boxes ──────────────
-var cachedCollections = [];
+/* =====================================================
+   EMBER MEMORY CONTROLLER v2
+   Pure JS — pywebview API wrapper
+   ===================================================== */
 
-// ── Tab switching ────────────────────────────────────
-document.querySelectorAll('.tab').forEach(function(tab) {
-  tab.addEventListener('click', function() {
-    document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
-    document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
-    tab.classList.add('active');
-    document.getElementById(tab.dataset.tab).classList.add('active');
-    if (tab.dataset.tab === 'collections') refreshCollections();
-    if (tab.dataset.tab === 'setup') { checkPrereqs(); checkIntegration(); }
-  });
-});
-
-// ── Threshold slider ─────────────────────────────────
-var slider = document.getElementById('threshold');
-var sliderVal = document.getElementById('threshold-val');
-slider.addEventListener('input', function() {
-  sliderVal.textContent = parseFloat(slider.value).toFixed(2);
-});
-
-// ── Toast ────────────────────────────────────────────
-function toast(msg, ok) {
+// ── Helpers ───────────────────────────────────────────
+var toastTimer = null;
+function showToast(msg, type) {
   var el = document.getElementById('toast');
   el.textContent = msg;
-  el.className = 'toast ' + (ok ? 'ok' : 'err') + ' show';
-  setTimeout(function() { el.classList.remove('show'); }, 3500);
+  el.className = 'toast show ' + (type || 'inf');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function() { el.classList.remove('show'); }, 3500);
 }
 
-// Selected collection tracking
-var selectedCollection = null;
+function nowStr() {
+  var d = new Date();
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
 
-// ── API helper ───────────────────────────────────────
-function api(method) {
+function safeNum(v, fallback) {
+  var n = parseFloat(v);
+  return isNaN(n) ? (fallback || 0) : n;
+}
+
+// Safe wrapper around pywebview API calls
+function callApi(method) {
   var args = Array.prototype.slice.call(arguments, 1);
-  return window.pywebview.api[method].apply(null, args);
+  try {
+    var fn = window.pywebview && window.pywebview.api && window.pywebview.api[method];
+    if (!fn) return Promise.resolve({ ok: false, msg: 'API not ready' });
+    return Promise.resolve(fn.apply(window.pywebview.api, args));
+  } catch (e) {
+    return Promise.resolve({ ok: false, msg: String(e) });
+  }
 }
 
-// ── Combo Box Component ─────────────────────────────
-function setupComboBox(inputId, dropdownId) {
-  var input = document.getElementById(inputId);
-  var dropdown = document.getElementById(dropdownId);
+// Create DOM element with text content safely
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = String(text);
+  return e;
+}
 
-  function renderDropdown(filter) {
-    dropdown.textContent = '';
-    var filterLower = (filter || '').toLowerCase();
-    var matched = cachedCollections.filter(function(c) {
-      return !filterLower || c.name.toLowerCase().indexOf(filterLower) !== -1;
+function setTextById(id, text) {
+  var e = document.getElementById(id);
+  if (e) e.textContent = String(text);
+}
+
+// ── Tab switching ─────────────────────────────────────
+function initTabs() {
+  document.querySelectorAll('.tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var tab = btn.getAttribute('data-tab');
+      document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+      document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+      btn.classList.add('active');
+      var panel = document.getElementById('tab-' + tab);
+      if (panel) panel.classList.add('active');
+
+      if (tab === 'dashboard') {
+        startDashRefresh();
+      } else {
+        stopDashRefresh();
+        if (tab === 'collections') loadCollections();
+        else if (tab === 'settings') loadSettings();
+        else if (tab === 'cli') loadCLIStatus();
+      }
     });
+  });
+}
 
-    if (matched.length === 0 && !filter) {
-      var empty = document.createElement('div');
-      empty.className = 'combo-hint';
-      empty.textContent = 'No collections found';
-      dropdown.appendChild(empty);
+// =====================================================
+// DASHBOARD
+// =====================================================
+
+var forceAnimId = null;
+var forceNodes = [];
+var forceEdges = [];
+var forceFrame = 0;
+
+function setEngineAlive(alive) {
+  document.getElementById('engineDot').classList.toggle('live', alive);
+  setTextById('enginePillLabel', alive ? 'Engine Live' : 'Engine');
+}
+
+function loadDashboard() {
+  callApi('get_engine_stats').then(function(r) {
+    if (!r || !r.ok) return;
+    var s = r.stats || {};
+    var memCount  = s.total_memories_tracked || 0;
+    var hotCount  = s.hot_memories           || 0;
+    var connCount = s.established_connections || 0;
+    var tickCount = s.tick_count             || 0;
+    var heatMode  = s.heat_mode              || 'universal';
+
+    setTextById('stat-memories', memCount);
+    setTextById('stat-connections', connCount);
+    setTextById('stat-ticks', tickCount);
+    setTextById('heatModeBadge', heatMode);
+
+    var hotEl = document.getElementById('stat-hot');
+    if (hotEl) {
+      hotEl.textContent = String(hotCount);
+      hotEl.className = 'stat-value' + (hotCount > 0 ? ' hot' : '');
+    }
+
+    setEngineAlive(tickCount > 0);
+    setTextById('heatRefreshTime', nowStr());
+  });
+
+  loadHeatMap();
+  loadConnGraph();
+}
+
+function heatColor(norm) {
+  if (norm <= 0) return '#2a2a2a';
+  if (norm < 0.4) {
+    var t = norm / 0.4;
+    var r = Math.round(42 + t * 213);
+    var g = Math.round(42 + t * 118);
+    return 'rgb(' + r + ',' + g + ',42)';
+  }
+  var t2 = (norm - 0.4) / 0.6;
+  var g2 = Math.round(160 - t2 * 91);
+  return 'rgb(255,' + g2 + ',0)';
+}
+
+function buildHeatBarRow(id, val, maxVal) {
+  var norm = maxVal > 0 ? val / maxVal : 0;
+  var pct  = Math.max(2, Math.round(norm * 100));
+  var color = heatColor(norm);
+  var shortId = id.length > 18 ? '\u2026' + id.slice(-16) : id;
+
+  var row = document.createElement('div');
+  row.className = 'heat-bar-row';
+
+  var lbl = el('div', 'heat-bar-label', shortId);
+  lbl.title = id;
+
+  var track = document.createElement('div');
+  track.className = 'heat-bar-track';
+
+  var fill = document.createElement('div');
+  fill.className = 'heat-bar-fill';
+  fill.style.width = pct + '%';
+  fill.style.background = color;
+  track.appendChild(fill);
+
+  var valEl = el('div', 'heat-bar-val', typeof val === 'number' ? val.toFixed(1) : String(val));
+
+  row.appendChild(lbl);
+  row.appendChild(track);
+  row.appendChild(valEl);
+  return row;
+}
+
+function loadHeatMap() {
+  var area = document.getElementById('heatMapArea');
+  callApi('get_heat_map').then(function(r) {
+    if (!area) return;
+    if (!r || !r.ok || !r.heat || Object.keys(r.heat).length === 0) {
+      area.textContent = '';
+      var empt = document.createElement('div');
+      empt.className = 'empty-state';
+      var ico = el('div', 'empty-icon', '\uD83C\uDF21');
+      var msg = el('span', null, 'No heat data yet \u2014 the Engine learns as you use it');
+      empt.appendChild(ico);
+      empt.appendChild(msg);
+      area.appendChild(empt);
       return;
     }
 
-    matched.forEach(function(c) {
-      var opt = document.createElement('div');
-      opt.className = 'combo-option';
-      opt.textContent = c.name;
-      var count = document.createElement('span');
-      count.className = 'combo-count';
-      count.textContent = c.count + ' entries';
-      opt.appendChild(count);
-      opt.addEventListener('mousedown', function(e) {
-        e.preventDefault();
-        input.value = c.name;
-        dropdown.classList.remove('open');
-      });
-      dropdown.appendChild(opt);
+    var entries = Object.entries(r.heat)
+      .sort(function(a, b) { return b[1] - a[1]; })
+      .slice(0, 20);
+
+    var maxVal = entries.length > 0 ? entries[0][1] : 1;
+    area.textContent = '';
+    entries.forEach(function(entry) {
+      area.appendChild(buildHeatBarRow(entry[0], entry[1], maxVal));
+    });
+  });
+}
+
+// Force-directed graph
+function loadConnGraph() {
+  var svg       = document.getElementById('conn-svg');
+  var edgesG    = document.getElementById('conn-edges');
+  var nodesG    = document.getElementById('conn-nodes');
+  var emptyEl   = document.getElementById('connEmptyState');
+
+  setTextById('connRefreshTime', nowStr());
+
+  callApi('get_connections').then(function(r) {
+    if (!r || !r.ok || !r.connections || r.connections.length === 0) {
+      if (svg) svg.style.display = 'none';
+      if (emptyEl) emptyEl.style.display = 'block';
+      return;
+    }
+
+    if (svg) svg.style.display = 'block';
+    if (emptyEl) emptyEl.style.display = 'none';
+    edgesG.textContent = '';
+    nodesG.textContent = '';
+
+    var connections = r.connections;
+    var W = (svg && svg.clientWidth) || 760;
+    var H = 260;
+
+    // Build nodes
+    var nodeMap = {};
+    connections.forEach(function(c) {
+      if (!nodeMap[c.source]) nodeMap[c.source] = { id: c.source, conns: 0 };
+      if (!nodeMap[c.target]) nodeMap[c.target] = { id: c.target, conns: 0 };
+      nodeMap[c.source].conns++;
+      nodeMap[c.target].conns++;
     });
 
-    if (filter && !matched.some(function(c) { return c.name === filter; })) {
-      var hint = document.createElement('div');
-      hint.className = 'combo-hint';
-      hint.textContent = 'Press Enter to create "' + filter + '"';
-      dropdown.appendChild(hint);
+    var nodeList = Object.values(nodeMap);
+    forceNodes = nodeList.map(function(n, i) {
+      var angle = (i / nodeList.length) * Math.PI * 2;
+      var rad   = Math.min(W, H) * 0.3;
+      return {
+        id: n.id, conns: n.conns,
+        x: W / 2 + Math.cos(angle) * rad + (Math.random() - 0.5) * 20,
+        y: H / 2 + Math.sin(angle) * rad * 0.7 + (Math.random() - 0.5) * 20,
+        vx: 0, vy: 0, el: null, radius: 4
+      };
+    });
+
+    forceEdges = connections.map(function(c) {
+      return { source: c.source, target: c.target, strength: c.strength || 1, el: null };
+    });
+
+    var ns = 'http://www.w3.org/2000/svg';
+    var maxStrength = Math.max.apply(null, forceEdges.map(function(e) { return e.strength; }).concat([1]));
+    var maxConns    = Math.max.apply(null, forceNodes.map(function(n) { return n.conns;    }).concat([1]));
+
+    forceEdges.forEach(function(e) {
+      var line = document.createElementNS(ns, 'line');
+      var norm = e.strength / maxStrength;
+      var w = (0.5 + norm * 2.5).toFixed(1);
+      var isEstab = e.strength >= 3.0;
+      var alpha = (0.2 + norm * 0.6).toFixed(2);
+      var color = isEstab
+        ? 'rgba(255,120,32,' + alpha + ')'
+        : 'rgba(120,100,80,' + alpha + ')';
+      line.setAttribute('stroke', color);
+      line.setAttribute('stroke-width', w);
+      edgesG.appendChild(line);
+      e.el = line;
+    });
+
+    forceNodes.forEach(function(n) {
+      var normC  = n.conns / maxConns;
+      var radius = 4 + normC * 8;
+      n.radius   = radius;
+      var g      = document.createElementNS(ns, 'g');
+      var circle = document.createElementNS(ns, 'circle');
+      circle.setAttribute('r', radius);
+      circle.setAttribute('fill', 'url(#nodeGrad)');
+      circle.setAttribute('opacity', '0.85');
+      var title = document.createElementNS(ns, 'title');
+      title.textContent = n.id;
+      g.appendChild(circle);
+      g.appendChild(title);
+      nodesG.appendChild(g);
+      n.el = g;
+    });
+
+    if (forceAnimId) { cancelAnimationFrame(forceAnimId); forceAnimId = null; }
+    forceFrame = 0;
+    runForce(W, H);
+  });
+}
+
+function runForce(W, H) {
+  var REPEL   = 900;
+  var ATTRACT = 0.04;
+  var GRAVITY = 0.012;
+  var FRICTION = 0.88;
+  var MAX_FRAMES = 220;
+
+  var nodeById = {};
+  forceNodes.forEach(function(n) { nodeById[n.id] = n; });
+
+  function step() {
+    forceFrame++;
+    var totalV = 0;
+
+    // Repulsion + gravity
+    for (var i = 0; i < forceNodes.length; i++) {
+      var a = forceNodes[i];
+      a.vx += (W / 2 - a.x) * GRAVITY;
+      a.vy += (H / 2 - a.y) * GRAVITY;
+
+      for (var j = i + 1; j < forceNodes.length; j++) {
+        var b = forceNodes[j];
+        var dx = a.x - b.x;
+        var dy = a.y - b.y;
+        var d2 = dx * dx + dy * dy + 1;
+        var d  = Math.sqrt(d2);
+        var f  = REPEL / d2;
+        a.vx += f * dx / d;  a.vy += f * dy / d;
+        b.vx -= f * dx / d;  b.vy -= f * dy / d;
+      }
+    }
+
+    // Edge attraction
+    forceEdges.forEach(function(e) {
+      var s = nodeById[e.source];
+      var t = nodeById[e.target];
+      if (!s || !t) return;
+      var dx = t.x - s.x;
+      var dy = t.y - s.y;
+      var d  = Math.sqrt(dx * dx + dy * dy) + 1;
+      var f  = ATTRACT * d * (e.strength || 1);
+      s.vx += f * dx / d;  s.vy += f * dy / d;
+      t.vx -= f * dx / d;  t.vy -= f * dy / d;
+    });
+
+    // Integrate
+    forceNodes.forEach(function(n) {
+      n.vx *= FRICTION;
+      n.vy *= FRICTION;
+      n.x = Math.max(n.radius + 4, Math.min(W - n.radius - 4, n.x + n.vx));
+      n.y = Math.max(n.radius + 4, Math.min(H - n.radius - 4, n.y + n.vy));
+      totalV += Math.abs(n.vx) + Math.abs(n.vy);
+      if (n.el) n.el.setAttribute('transform', 'translate(' + n.x + ',' + n.y + ')');
+    });
+
+    // Update edge positions
+    forceEdges.forEach(function(e) {
+      var s = nodeById[e.source];
+      var t = nodeById[e.target];
+      if (!s || !t || !e.el) return;
+      e.el.setAttribute('x1', s.x);
+      e.el.setAttribute('y1', s.y);
+      e.el.setAttribute('x2', t.x);
+      e.el.setAttribute('y2', t.y);
+    });
+
+    if (forceFrame < MAX_FRAMES && totalV > 0.2) {
+      forceAnimId = requestAnimationFrame(step);
+    } else {
+      forceAnimId = null;
     }
   }
 
-  input.addEventListener('focus', function() {
-    renderDropdown(input.value);
-    dropdown.classList.add('open');
+  forceAnimId = requestAnimationFrame(step);
+}
+
+// Heat mode toggle
+document.getElementById('heatModeCard').addEventListener('click', function() {
+  var badge   = document.getElementById('heatModeBadge');
+  var current = badge ? badge.textContent.trim() : 'universal';
+  var next    = current === 'universal' ? 'per_cli' : 'universal';
+  callApi('set_heat_mode', next).then(function(r) {
+    if (r && r.ok) {
+      setTextById('heatModeBadge', next);
+      showToast('Heat mode: ' + next, 'ok');
+    } else {
+      showToast((r && r.msg) || 'Failed to set mode', 'err');
+    }
+  });
+});
+
+// Dashboard auto-refresh
+var dashRefreshInterval = null;
+
+function startDashRefresh() {
+  stopDashRefresh();
+  loadDashboard();
+  dashRefreshInterval = setInterval(loadDashboard, 10000);
+}
+
+function stopDashRefresh() {
+  if (dashRefreshInterval) { clearInterval(dashRefreshInterval); dashRefreshInterval = null; }
+}
+
+// =====================================================
+// COLLECTIONS
+// =====================================================
+
+var expandedCol = null;
+
+function buildColItem(col) {
+  var wrap   = document.createElement('div');
+
+  var header = document.createElement('div');
+  header.className = 'col-item' + (expandedCol === col.name ? ' expanded' : '');
+
+  var nameEl  = el('div', 'col-item-name', col.name);
+  var countEl = el('div', 'col-item-count', (col.count || 0) + ' docs');
+
+  var delBtn = document.createElement('button');
+  delBtn.className = 'btn btn-danger btn-sm';
+  delBtn.textContent = 'Delete';
+
+  header.appendChild(nameEl);
+  header.appendChild(countEl);
+  header.appendChild(delBtn);
+
+  // Search area
+  var searchArea = document.createElement('div');
+  searchArea.className = 'col-search-area' + (expandedCol === col.name ? ' visible' : '');
+  searchArea.id = 'search-' + col.name;
+
+  var searchRow   = document.createElement('div');
+  searchRow.className = 'search-row';
+
+  var queryInput  = document.createElement('input');
+  queryInput.type = 'text';
+  queryInput.className = 'fluid';
+  queryInput.placeholder = 'Search this collection...';
+
+  var limitSel = document.createElement('select');
+  [5, 10, 20].forEach(function(v) {
+    var opt = document.createElement('option');
+    opt.value = String(v);
+    opt.textContent = String(v);
+    if (v === 10) opt.selected = true;
+    limitSel.appendChild(opt);
   });
 
-  input.addEventListener('input', function() {
-    renderDropdown(input.value);
-    dropdown.classList.add('open');
+  var searchBtn = document.createElement('button');
+  searchBtn.className = 'btn btn-secondary btn-sm';
+  searchBtn.textContent = 'Search';
+
+  searchRow.appendChild(queryInput);
+  searchRow.appendChild(limitSel);
+  searchRow.appendChild(searchBtn);
+
+  var resultsEl = document.createElement('div');
+  resultsEl.className = 'search-results';
+  resultsEl.id = 'results-' + col.name;
+
+  searchArea.appendChild(searchRow);
+  searchArea.appendChild(resultsEl);
+
+  wrap.appendChild(header);
+  wrap.appendChild(searchArea);
+
+  // Events
+  header.addEventListener('click', function(e) {
+    if (e.target === delBtn) return;
+    if (expandedCol === col.name) {
+      expandedCol = null;
+      header.classList.remove('expanded');
+      searchArea.classList.remove('visible');
+    } else {
+      document.querySelectorAll('.col-item').forEach(function(i) { i.classList.remove('expanded'); });
+      document.querySelectorAll('.col-search-area').forEach(function(a) { a.classList.remove('visible'); });
+      expandedCol = col.name;
+      header.classList.add('expanded');
+      searchArea.classList.add('visible');
+    }
   });
 
-  input.addEventListener('blur', function() {
-    setTimeout(function() { dropdown.classList.remove('open'); }, 150);
+  delBtn.addEventListener('click', function() {
+    if (!confirm('Delete collection "' + col.name + '"? This cannot be undone.')) return;
+    callApi('delete_collection', col.name).then(function(r) {
+      if (r && r.ok) {
+        showToast('Deleted: ' + col.name, 'ok');
+        if (expandedCol === col.name) expandedCol = null;
+        loadCollections();
+      } else {
+        showToast((r && r.msg) || 'Delete failed', 'err');
+      }
+    });
+  });
+
+  function doSearch() {
+    var query = queryInput.value.trim();
+    if (!query) return;
+    resultsEl.textContent = '';
+    var loadRow = document.createElement('div');
+    loadRow.className = 'loading-text';
+    var spin = document.createElement('div');
+    spin.className = 'spinner';
+    loadRow.appendChild(spin);
+    loadRow.appendChild(el('span', null, ' Searching...'));
+    resultsEl.appendChild(loadRow);
+
+    var limit = parseInt(limitSel.value, 10) || 10;
+    callApi('search_collection', col.name, query, limit).then(function(r) {
+      resultsEl.textContent = '';
+      if (!r || !r.ok || !r.results || r.results.length === 0) {
+        resultsEl.appendChild(el('div', 'empty-state', 'No results found'));
+        return;
+      }
+      r.results.forEach(function(res) {
+        var item  = document.createElement('div');
+        item.className = 'search-result-item';
+        var idEl    = el('div', 'search-result-id',   res.id   || '\u2014');
+        var textEl  = el('div', 'search-result-text', res.text || res.document || res.content || '');
+        var scoreEl = el('div', 'search-result-score', 'score: ' + (
+          res.score != null ? (typeof res.score === 'number' ? res.score.toFixed(4) : res.score) : '\u2014'
+        ));
+        item.appendChild(idEl);
+        item.appendChild(textEl);
+        item.appendChild(scoreEl);
+        resultsEl.appendChild(item);
+      });
+    });
+  }
+
+  searchBtn.addEventListener('click', doSearch);
+  queryInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') doSearch(); });
+
+  return wrap;
+}
+
+function loadCollections() {
+  var list = document.getElementById('colList');
+  list.textContent = '';
+  var loadRow = document.createElement('div');
+  loadRow.className = 'loading-text';
+  var spin = document.createElement('div');
+  spin.className = 'spinner';
+  loadRow.appendChild(spin);
+  loadRow.appendChild(el('span', null, ' Loading collections...'));
+  list.appendChild(loadRow);
+
+  callApi('get_collections').then(function(r) {
+    list.textContent = '';
+    if (!r || !r.ok || !r.collections) {
+      list.appendChild(buildEmptyState('No collections found'));
+      return;
+    }
+    var cols = r.collections;
+    if (cols.length === 0) {
+      list.appendChild(buildEmptyState('No collections yet \u2014 create one to get started'));
+      return;
+    }
+    cols.forEach(function(col) {
+      list.appendChild(buildColItem(col));
+    });
   });
 }
 
-function loadCollectionsForCombos() {
-  api('get_collections').then(function(r) {
-    if (r.ok) {
-      cachedCollections = r.collections;
+function buildEmptyState(msg) {
+  var d = document.createElement('div');
+  d.className = 'empty-state';
+  d.appendChild(el('div', 'empty-icon', '\uD83D\uDCE6'));
+  d.appendChild(el('span', null, msg));
+  return d;
+}
+
+// Create collection
+document.getElementById('btnCreateToggle').addEventListener('click', function() {
+  var form = document.getElementById('createForm');
+  form.classList.toggle('visible');
+  if (form.classList.contains('visible')) document.getElementById('newColName').focus();
+});
+
+document.getElementById('btnCreateCancel').addEventListener('click', function() {
+  document.getElementById('createForm').classList.remove('visible');
+  document.getElementById('newColName').value = '';
+});
+
+document.getElementById('btnCreateCol').addEventListener('click', function() {
+  var name  = document.getElementById('newColName').value.trim();
+  var scope = document.getElementById('newColScope').value;
+  if (!name) { showToast('Enter a collection name', 'err'); return; }
+  callApi('create_collection', name, scope).then(function(r) {
+    if (r && r.ok) {
+      showToast('Created: ' + name, 'ok');
+      document.getElementById('createForm').classList.remove('visible');
+      document.getElementById('newColName').value = '';
+      loadCollections();
+    } else {
+      showToast((r && r.msg) || 'Create failed', 'err');
+    }
+  });
+});
+
+// =====================================================
+// SETTINGS
+// =====================================================
+
+var currentProvider = 'ollama';
+
+function setProvider(name) {
+  document.querySelectorAll('.provider-card').forEach(function(c) {
+    c.classList.toggle('selected', c.getAttribute('data-provider') === name);
+  });
+  currentProvider = name;
+}
+
+document.querySelectorAll('.provider-card').forEach(function(card) {
+  card.addEventListener('click', function() { setProvider(card.getAttribute('data-provider')); });
+});
+
+function loadSettings() {
+  callApi('get_config').then(function(r) {
+    if (!r) return;
+    setProvider(r.embedding_provider || 'ollama');
+
+    var be = document.getElementById('backendSelect');
+    if (be && r.backend) be.value = r.backend;
+
+    var dd = document.getElementById('dataDir');
+    if (dd && r.data_dir) dd.value = r.data_dir;
+
+    var st = document.getElementById('simThreshold');
+    if (st && r.similarity_threshold != null) st.value = r.similarity_threshold;
+
+    var mr = document.getElementById('maxResults');
+    if (mr && r.max_results != null) mr.value = r.max_results;
+
+    var mp = document.getElementById('maxPreviewChars');
+    if (mp && r.max_preview_chars != null) mp.value = r.max_preview_chars;
+
+    checkOllamaStatus();
+  });
+}
+
+function checkOllamaStatus() {
+  var dot = document.getElementById('ollamaStatusDot');
+  var txt = document.getElementById('ollamaStatusText');
+  if (dot) dot.className = 'status-dot';
+  if (txt) txt.textContent = 'Checking...';
+  callApi('test_ollama').then(function(r) {
+    if (r && r.ok) {
+      if (dot) dot.className = 'status-dot ok';
+      if (txt) txt.textContent = r.msg || 'Connected';
+    } else {
+      if (dot) dot.className = 'status-dot err';
+      if (txt) txt.textContent = (r && r.msg) || 'Not reachable';
     }
   });
 }
 
-// ── Init ─────────────────────────────────────────────
-function waitForApi(callback) {
-  if (window.pywebview && window.pywebview.api) {
-    callback();
-  } else {
-    setTimeout(function() { waitForApi(callback); }, 50);
+document.getElementById('btnCheckOllama').addEventListener('click', checkOllamaStatus);
+
+document.getElementById('btnBrowse').addEventListener('click', function() {
+  callApi('browse_directory').then(function(r) {
+    if (r && r.ok && r.path) document.getElementById('dataDir').value = r.path;
+  });
+});
+
+document.getElementById('btnSaveSettings').addEventListener('click', function() {
+  var config = {
+    embedding_provider:  currentProvider,
+    backend:             document.getElementById('backendSelect').value,
+    data_dir:            document.getElementById('dataDir').value.trim(),
+    similarity_threshold: safeNum(document.getElementById('simThreshold').value, 0.7),
+    max_results:          parseInt(document.getElementById('maxResults').value, 10) || 10,
+    max_preview_chars:    parseInt(document.getElementById('maxPreviewChars').value, 10) || 200
+  };
+  var oKey = document.getElementById('keyOpenAI').value.trim();
+  var gKey = document.getElementById('keyGoogle').value.trim();
+  if (oKey) config.openai_api_key = oKey;
+  if (gKey) config.google_api_key = gKey;
+
+  callApi('save_settings', config).then(function(r) {
+    if (r && r.ok) {
+      showToast((r.msg) || 'Settings saved', 'ok');
+      document.getElementById('keyOpenAI').value = '';
+      document.getElementById('keyGoogle').value = '';
+    } else {
+      showToast((r && r.msg) || 'Save failed', 'err');
+    }
+  });
+});
+
+// =====================================================
+// CLI STATUS
+// =====================================================
+
+var cliIgnored = { claude: false, gemini: false, codex: false };
+
+var CLI_DEFS = [
+  { id: 'claude', label: 'Claude Code', icon: '\u25C6' },
+  { id: 'gemini', label: 'Gemini CLI',  icon: '\u2746' },
+  { id: 'codex',  label: 'Codex',       icon: '\u2B21' }
+];
+
+function buildCLICard(def, info, ignored) {
+  var card = document.createElement('div');
+  card.className = 'cli-card';
+  card.id = 'cli-card-' + def.id;
+
+  var nameEl = el('div', 'cli-name', def.icon + ' ' + def.label);
+  var pathEl = el('div', 'cli-path', info.path || '\u2014');
+
+  var badgeRow = document.createElement('div');
+  badgeRow.className = 'cli-badges';
+
+  var instBadge = el('span', 'badge ' + (info.installed ? 'badge-ok' : 'badge-err'),
+    info.installed ? '\u2713 Installed' : '\u2717 Not found');
+  badgeRow.appendChild(instBadge);
+
+  if (ignored) {
+    badgeRow.appendChild(el('span', 'badge badge-warn', 'Heat Ignored'));
   }
+
+  // Toggle row
+  var toggleRow = document.createElement('label');
+  toggleRow.className = 'toggle-row';
+
+  var toggleWrap = document.createElement('label');
+  toggleWrap.className = 'toggle';
+  toggleWrap.title = 'Ignore this CLI in heat tracking';
+
+  var checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.className = 'ignore-toggle';
+  if (ignored) checkbox.checked = true;
+
+  var track = document.createElement('div');
+  track.className = 'toggle-track';
+
+  var thumb = document.createElement('div');
+  thumb.className = 'toggle-thumb';
+
+  toggleWrap.appendChild(checkbox);
+  toggleWrap.appendChild(track);
+  toggleWrap.appendChild(thumb);
+
+  toggleRow.appendChild(toggleWrap);
+  toggleRow.appendChild(el('span', null, 'Ignore in heat tracking'));
+
+  card.appendChild(nameEl);
+  card.appendChild(pathEl);
+  card.appendChild(badgeRow);
+  card.appendChild(toggleRow);
+
+  checkbox.addEventListener('change', function() {
+    callApi('toggle_cli_ignore', def.id).then(function(r) {
+      if (r && r.ok !== undefined) {
+        cliIgnored[def.id] = r.ignored;
+        var existingWarn = badgeRow.querySelector('.badge-warn');
+        if (r.ignored) {
+          if (!existingWarn) badgeRow.appendChild(el('span', 'badge badge-warn', 'Heat Ignored'));
+          showToast(def.label + ': heat ignored', 'inf');
+        } else {
+          if (existingWarn) existingWarn.remove();
+          showToast(def.label + ': heat tracking active', 'ok');
+        }
+      } else {
+        checkbox.checked = !checkbox.checked;
+        showToast('Toggle failed', 'err');
+      }
+    });
+  });
+
+  return card;
 }
+
+function loadCLIStatus() {
+  var grid = document.getElementById('cliGrid');
+  grid.textContent = '';
+  var loadRow = document.createElement('div');
+  loadRow.className = 'loading-text';
+  var spin = document.createElement('div');
+  spin.className = 'spinner';
+  loadRow.appendChild(spin);
+  loadRow.appendChild(el('span', null, ' Detecting CLIs...'));
+  grid.appendChild(loadRow);
+
+  Promise.all([
+    callApi('detect_clis'),
+    callApi('get_engine_stats')
+  ]).then(function(results) {
+    var cliR   = results[0];
+    var statsR = results[1];
+    var clis    = (cliR && cliR.clis)   || {};
+    var ignored = (statsR && statsR.stats && statsR.stats.ignored_clis) || {};
+
+    cliIgnored = {
+      claude: !!ignored.claude,
+      gemini: !!ignored.gemini,
+      codex:  !!ignored.codex
+    };
+
+    grid.textContent = '';
+    CLI_DEFS.forEach(function(def) {
+      var info = clis[def.id] || {};
+      grid.appendChild(buildCLICard(def, info, !!cliIgnored[def.id]));
+    });
+  });
+}
+
+document.getElementById('btnInstallAll').addEventListener('click', function() {
+  var btn = document.getElementById('btnInstallAll');
+  btn.disabled = true;
+  btn.textContent = 'Installing...';
+  callApi('run_install').then(function(r) {
+    btn.disabled = false;
+    btn.textContent = 'Run Install';
+    if (r && r.ok) {
+      showToast((r.msg) || 'Install complete', 'ok');
+      loadCLIStatus();
+    } else {
+      showToast((r && r.msg) || 'Install failed', 'err');
+    }
+  });
+});
+
+// =====================================================
+// INIT
+// =====================================================
 
 function init() {
-  api('get_config').then(function(cfg) {
-    document.getElementById('data-dir').value = cfg.data_dir || '';
-    document.getElementById('default-collection').value = cfg.default_collection || 'general';
-    slider.value = cfg.similarity_threshold || '0.45';
-    sliderVal.textContent = parseFloat(cfg.similarity_threshold || '0.45').toFixed(2);
-    document.getElementById('max-results').value = cfg.max_results || '5';
-    document.getElementById('max-preview').value = cfg.max_preview || '800';
-    document.getElementById('embed-model').value = cfg.embedding_model || 'bge-m3';
-    document.getElementById('ollama-url').value = cfg.ollama_url || '';
-  });
-
-  // Load collections for combo boxes
-  loadCollectionsForCombos();
-
-  // Set up combo boxes
-  setupComboBox('default-collection', 'default-col-dropdown');
-  setupComboBox('ingest-col', 'ingest-col-dropdown');
-
-  checkIntegration();
-  checkPrereqs();
+  initTabs();
+  startDashRefresh();
 }
 
-window.addEventListener('load', function() { waitForApi(init); });
-
-// ── General ──────────────────────────────────────────
-function saveGeneral() {
-  api('get_config').then(function(cfg) {
-    cfg.data_dir = document.getElementById('data-dir').value;
-    cfg.default_collection = document.getElementById('default-collection').value;
-    cfg.similarity_threshold = slider.value;
-    cfg.max_results = document.getElementById('max-results').value;
-    cfg.max_preview = document.getElementById('max-preview').value;
-    api('save_settings', cfg).then(function(r) { toast(r.msg, r.ok); });
-  });
-}
-
-function browseDataDir() {
-  api('browse_directory').then(function(r) {
-    if (r.ok) document.getElementById('data-dir').value = r.path;
-  });
-}
-
-// ── Providers ────────────────────────────────────────
-function saveProviders() {
-  api('get_config').then(function(cfg) {
-    cfg.backend = document.querySelector('input[name="backend"]:checked').value;
-    cfg.embedding_provider = document.querySelector('input[name="embed-provider"]:checked').value;
-    cfg.embedding_model = document.getElementById('embed-model').value;
-    cfg.ollama_url = document.getElementById('ollama-url').value;
-    api('save_settings', cfg).then(function(r) { toast(r.msg, r.ok); });
-  });
-}
-
-function testOllama() {
-  var status = document.getElementById('ollama-status');
-  status.textContent = 'Testing...';
-  status.style.color = 'var(--fg-dim)';
-  api('test_ollama').then(function(r) {
-    status.textContent = r.msg;
-    status.style.color = r.ok ? 'var(--success)' : 'var(--error)';
-  });
-}
-
-// ── Collections ──────────────────────────────────────
-function refreshCollections() {
-  var body = document.getElementById('col-body');
-  body.textContent = '';
-  var loadRow = document.createElement('tr');
-  var loadCell = document.createElement('td');
-  loadCell.setAttribute('colspan', '2');
-  loadCell.style.color = 'var(--fg-muted)';
-  loadCell.textContent = 'Loading...';
-  loadRow.appendChild(loadCell);
-  body.appendChild(loadRow);
-
-  api('get_collections').then(function(r) {
-    body.textContent = '';
-    if (r.ok && r.collections.length > 0) {
-      // Update cached collections for combo boxes
-      cachedCollections = r.collections;
-
-      var total = 0;
-      r.collections.forEach(function(c) {
-        total += c.count;
-        var tr = document.createElement('tr');
-        var nameCell = document.createElement('td');
-        nameCell.textContent = c.name;
-        var countCell = document.createElement('td');
-        countCell.className = 'count';
-        countCell.textContent = c.count;
-        tr.appendChild(nameCell);
-        tr.appendChild(countCell);
-        tr.addEventListener('click', function() {
-          body.querySelectorAll('tr').forEach(function(row) { row.classList.remove('selected'); });
-          tr.classList.add('selected');
-          selectedCollection = c.name;
-        });
-        body.appendChild(tr);
-      });
-      var totalRow = document.createElement('tr');
-      totalRow.className = 'total-row';
-      var totalLabel = document.createElement('td');
-      totalLabel.textContent = 'Total';
-      var totalCount = document.createElement('td');
-      totalCount.className = 'count';
-      totalCount.textContent = total + ' across ' + r.collections.length + ' collections';
-      totalRow.appendChild(totalLabel);
-      totalRow.appendChild(totalCount);
-      body.appendChild(totalRow);
-    } else {
-      var emptyRow = document.createElement('tr');
-      var emptyCell = document.createElement('td');
-      emptyCell.setAttribute('colspan', '2');
-      emptyCell.style.color = 'var(--fg-muted)';
-      emptyCell.textContent = r.msg || 'No collections yet';
-      emptyRow.appendChild(emptyCell);
-      body.appendChild(emptyRow);
-    }
-  });
-}
-
-function createCollection() {
-  var name = prompt('Collection name (kebab-case):');
-  if (!name) return;
-  api('create_collection', name).then(function(r) {
-    toast(r.msg, r.ok);
-    if (r.ok) {
-      refreshCollections();
-      loadCollectionsForCombos();
-    }
-  });
-}
-
-function deleteCollection() {
-  if (!selectedCollection) { toast('Select a collection first', false); return; }
-  if (!confirm('Delete "' + selectedCollection + '" and all entries? This cannot be undone.')) return;
-  api('delete_collection', selectedCollection).then(function(r) {
-    toast(r.msg, r.ok);
-    selectedCollection = null;
-    if (r.ok) {
-      refreshCollections();
-      loadCollectionsForCombos();
-    }
-  });
-}
-
-function browseIngestDir() {
-  api('browse_directory').then(function(r) {
-    if (r.ok) document.getElementById('ingest-dir').value = r.path;
-  });
-}
-
-function runIngest(sync) {
-  var dir = document.getElementById('ingest-dir').value;
-  if (!dir) { toast('Select a source directory first', false); return; }
-  var col = document.getElementById('ingest-col').value || null;
-  var status = document.getElementById('ingest-status');
-  status.textContent = sync ? 'Syncing...' : 'Ingesting...';
-  status.style.color = 'var(--ember)';
-  api('run_ingest', dir, col, sync).then(function(r) {
-    status.textContent = r.msg;
-    status.style.color = r.ok ? 'var(--success)' : 'var(--error)';
-    refreshCollections();
-    loadCollectionsForCombos();
-  });
-}
-
-// ── Setup ────────────────────────────────────────────
-function checkPrereqs() {
-  var el = document.getElementById('prereq-list');
-  el.textContent = '';
-  var loadDiv = document.createElement('div');
-  loadDiv.className = 'check-row';
-  loadDiv.textContent = 'Checking...';
-  el.appendChild(loadDiv);
-
-  api('check_prerequisites').then(function(r) {
-    el.textContent = '';
-    var names = {ollama:'Ollama', model:'Embedding Model', chromadb:'ChromaDB', mcp:'MCP SDK'};
-    Object.keys(r).forEach(function(key) {
-      var info = r[key];
-      var row = document.createElement('div');
-      row.className = 'check-row';
-
-      var icon = document.createElement('span');
-      icon.className = 'icon';
-      icon.style.color = info.ok ? 'var(--success)' : 'var(--warning)';
-      icon.textContent = info.ok ? '\u2713' : '\u2717';
-      row.appendChild(icon);
-
-      var label = document.createElement('span');
-      label.className = 'label';
-      label.textContent = names[key] || key;
-      row.appendChild(label);
-
-      var detail = document.createElement('span');
-      detail.className = 'detail';
-      detail.textContent = info.msg;
-      row.appendChild(detail);
-
-      el.appendChild(row);
-    });
-  });
-}
-
-function checkIntegration() {
-  api('check_integration').then(function(r) {
-    var el = document.getElementById('integration-list');
-    el.textContent = '';
-
-    var items = [
-      {key:'config', label:'Settings (config.env)', ok:r.config},
-      {key:'data_dir', label:'Data Directory', ok:r.data_dir},
-      {key:'mcp', label:'MCP Server (ember-memory)', ok:r.mcp},
-      {key:'hook', label:'Auto-Retrieval Hook', ok:r.hook}
-    ];
-
-    items.forEach(function(item) {
-      var row = document.createElement('div');
-      row.className = 'check-row';
-
-      var icon = document.createElement('span');
-      icon.className = 'icon';
-      icon.style.color = item.ok ? 'var(--success)' : 'var(--fg-muted)';
-      icon.textContent = item.ok ? '\u2713' : '\u2014';
-      row.appendChild(icon);
-
-      var label = document.createElement('span');
-      label.className = 'label';
-      label.textContent = item.label;
-      row.appendChild(label);
-
-      var badge = document.createElement('span');
-      badge.className = 'badge ' + (item.ok ? 'badge-ok' : 'badge-warn');
-      badge.textContent = item.ok ? 'Active' : 'Not configured';
-      badge.style.marginLeft = 'auto';
-      row.appendChild(badge);
-
-      el.appendChild(row);
-    });
-
-    // Update header status
-    var allOk = r.mcp && r.hook && r.data_dir;
-    var headerEl = document.getElementById('header-status');
-    headerEl.textContent = '';
-    var dot = document.createElement('span');
-    dot.className = 'status-dot';
-    dot.style.background = allOk ? 'var(--success)' : 'var(--warning)';
-    headerEl.appendChild(dot);
-    var text = document.createElement('span');
-    text.className = 'status-text';
-    text.textContent = allOk ? 'Active' : 'Not Configured';
-    headerEl.appendChild(text);
-
-    // Auto-switch to setup if not configured
-    if (!r.config && !r.mcp) {
-      document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
-      document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
-      document.querySelector('[data-tab="setup"]').classList.add('active');
-      document.getElementById('setup').classList.add('active');
-    }
-  });
-}
-
-function runInstall() {
-  var status = document.getElementById('install-status');
-  status.textContent = 'Installing...';
-  status.style.color = 'var(--ember)';
-  api('run_install').then(function(r) {
-    status.textContent = r.msg;
-    status.style.color = r.ok ? 'var(--success)' : 'var(--error)';
-    if (r.ok) {
-      toast(r.msg, true);
-      checkIntegration();
-    } else {
-      toast(r.msg, false);
-    }
-  });
+if (window.pywebview && window.pywebview.api) {
+  init();
+} else {
+  window.addEventListener('pywebviewready', init);
 }
 </script>
 </body>
