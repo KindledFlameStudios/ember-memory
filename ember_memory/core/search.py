@@ -89,6 +89,16 @@ def retrieve(
     all_names = [c["name"] for c in all_collections if c.get("count", 0) > 0]
     visible = get_visible_collections(all_names, ai_id=ai_id)
 
+    if engine_db_path and visible:
+        engine = _get_engine(engine_db_path)
+        if engine is not None:
+            engine_state, _, _ = engine
+            visible = [
+                name
+                for name in visible
+                if engine_state.get_config(f"collection_disabled_{name}", "false") != "true"
+            ]
+
     if not visible:
         return []
 
@@ -160,9 +170,25 @@ def retrieve(
                 logger.warning(f"Engine scoring failed, keeping similarity scores: {e}")
                 # Already defaulted to similarity — nothing to reset
 
-    # 5. Sort by composite score and limit
-    all_results.sort(key=lambda r: r.composite_score, reverse=True)
-    final_results = all_results[:limit]
+    # 5. Deduplicate — same content from different collections wastes slots.
+    #    Keep the highest-scoring version of each unique content snippet.
+    seen_content: dict[str, int] = {}
+    deduped: list[RetrievalResult] = []
+    for r in all_results:
+        # Use first 200 chars as dedup key (handles minor formatting diffs)
+        key = r.content[:200].strip()
+        if key in seen_content:
+            # Keep the one with higher composite score
+            existing_idx = seen_content[key]
+            if r.composite_score > deduped[existing_idx].composite_score:
+                deduped[existing_idx] = r
+        else:
+            seen_content[key] = len(deduped)
+            deduped.append(r)
+
+    # 6. Sort by composite score and limit
+    deduped.sort(key=lambda r: r.composite_score, reverse=True)
+    final_results = deduped[:limit]
 
     # 6. Update Engine state after retrieval (records patterns for future boosts)
     if engine_db_path and final_results:
@@ -174,6 +200,9 @@ def retrieve(
                 for result in final_results:
                     heat_map.record_access(result.id, ai_id=ai_id)
                     engine_state.update_last_accessed(result.id)
+                    engine_state.upsert_memory_meta(
+                        result.id, result.collection, result.content
+                    )
 
                 # Record co-occurrence among returned results
                 result_ids = [r.id for r in final_results]

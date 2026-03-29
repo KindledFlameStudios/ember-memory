@@ -100,10 +100,25 @@ class EmberAPI:
     def get_config(self):
         return load_config()
 
-    def save_settings(self, config):
+    def save_settings(self, incoming):
         try:
+            # Merge incoming partial config with current config
+            # so missing fields don't cause KeyErrors
+            config = load_config()
+
+            # Map UI field names to config keys (handle mismatches)
+            field_map = {
+                "openai_api_key": "openai_key",
+                "google_api_key": "google_key",
+                "max_preview_chars": "max_preview",
+            }
+            for ui_key, config_key in field_map.items():
+                if ui_key in incoming:
+                    incoming[config_key] = incoming.pop(ui_key)
+
+            config.update(incoming)
             save_config(config)
-            return {"ok": True, "msg": "Settings saved. Restart Claude Code to apply."}
+            return {"ok": True, "msg": "Settings saved. Restart your CLIs to apply."}
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
@@ -387,6 +402,42 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
+    def get_ollama_models(self):
+        """Discover available Ollama embedding models."""
+        cfg = load_config()
+        try:
+            import urllib.request
+            url = cfg.get("ollama_url", "").replace("/api/embeddings", "/api/tags")
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read())
+                models = []
+                for m in data.get("models", []):
+                    name = m.get("name", "")
+                    size = m.get("size", 0)
+                    # Filter for embedding models by common naming patterns
+                    is_embed = any(kw in name.lower() for kw in
+                                   ["embed", "bge", "e5", "gte", "nomic", "mxbai"])
+                    models.append({
+                        "name": name,
+                        "size_gb": round(size / (1024**3), 1) if size else 0,
+                        "is_embedding": is_embed,
+                    })
+                current = cfg.get("embedding_model", "bge-m3")
+                return {"ok": True, "models": models, "current": current}
+        except Exception as e:
+            return {"ok": False, "models": [], "msg": str(e)}
+
+    def set_embedding_model(self, model_name):
+        """Switch the active Ollama embedding model."""
+        try:
+            config = load_config()
+            config["embedding_model"] = model_name
+            save_config(config)
+            return {"ok": True, "msg": f"Embedding model set to {model_name}. Restart CLIs to apply."}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
     def browse_directory(self):
         """Open native directory picker."""
         import webview
@@ -416,16 +467,33 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
+    def get_last_retrieval(self):
+        """Get the most recent retrieval snapshot for the dashboard."""
+        try:
+            cfg = load_config()
+            path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "last_retrieval.json")
+            if not os.path.exists(path):
+                return {"ok": True, "retrieval": None}
+            with open(path, "r") as f:
+                data = json.load(f)
+            return {"ok": True, "retrieval": data}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
     def get_heat_map(self):
-        """Get all heat values for visualization."""
+        """Get all heat values for visualization with metadata."""
         try:
             from ember_memory.core.engine.state import EngineState
             cfg = load_config()
             db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
             if not os.path.exists(db_path):
-                return {"ok": True, "heat": {}}
+                return {"ok": True, "heat": {}, "meta": {}}
             state = EngineState(db_path=db_path)
-            return {"ok": True, "heat": state.get_all_heat()}
+            return {
+                "ok": True,
+                "heat": state.get_all_heat(),
+                "meta": state.get_all_memory_meta(),
+            }
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
@@ -460,6 +528,25 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
+    def reset_engine(self):
+        """Reset all Engine state — heat map, connections, ticks. Clean slate."""
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            if not os.path.exists(db_path):
+                return {"ok": True, "msg": "Engine already clean"}
+            state = EngineState(db_path=db_path)
+            conn = state._conn
+            conn.execute("DELETE FROM heat_map")
+            conn.execute("DELETE FROM connections")
+            conn.execute("DELETE FROM memory_meta")
+            conn.execute("UPDATE ticks SET count = 0 WHERE key = 'global'")
+            conn.commit()
+            return {"ok": True, "msg": "Engine reset — heat, connections, and metadata cleared"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
     def toggle_cli_ignore(self, ai_id):
         """Toggle heat ignore for a specific CLI."""
         try:
@@ -472,6 +559,21 @@ class EmberAPI:
             new_val = "false" if current == "true" else "true"
             state.set_config(f"heat_ignore_{ai_id}", new_val)
             return {"ok": True, "ignored": new_val == "true"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def toggle_collection(self, col_name):
+        """Toggle whether a collection is included in Engine-backed retrieval."""
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            state = EngineState(db_path=db_path)
+            current = state.get_config(f"collection_disabled_{col_name}", "false")
+            new_val = "false" if current == "true" else "true"
+            state.set_config(f"collection_disabled_{col_name}", new_val)
+            return {"ok": True, "disabled": new_val == "true"}
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
