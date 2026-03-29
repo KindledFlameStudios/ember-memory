@@ -189,8 +189,16 @@ html, body {
 }
 .col-item:hover { border-color: var(--border-em); background: var(--bg-raised); }
 .col-item.expanded { border-color: rgba(255,120,32,0.3); }
+.col-item.disabled { opacity: 0.4; }
 .col-item-name { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--fg); flex: 1; }
 .col-item-count { font-size: 11px; color: var(--fg-muted); font-family: var(--font-mono); background: var(--bg-elevated); padding: 2px 8px; border-radius: 10px; }
+.toggle-switch { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #333; border-radius: 20px; transition: 0.3s; }
+.toggle-slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background: #888; border-radius: 50%; transition: 0.3s; }
+.toggle-switch input:checked + .toggle-slider { background: rgba(255,120,32,0.3); }
+.toggle-switch input:checked + .toggle-slider:before { transform: translateX(16px); background: #FF7820; }
+.col-rename-input { background: var(--bg-raised); border: 1px solid var(--ember); color: var(--fg); font-family: var(--font-mono); font-size: 12px; padding: 2px 6px; border-radius: 4px; width: 100%; }
 .col-search-area { border-top: 1px solid var(--border); padding: 12px 14px 14px; display: none; width: 100%; }
 .col-search-area.visible { display: block; }
 .search-row { display: flex; gap: 8px; margin-bottom: 10px; }
@@ -1008,21 +1016,101 @@ function stopDashRefresh() {
 
 var expandedCol = null;
 
-function buildColItem(col) {
+function buildColItem(col, labels, disabledMap) {
   var wrap   = document.createElement('div');
+  var defaultLabel = col.displayName || col.name;
+  var labelValue = labels && Object.prototype.hasOwnProperty.call(labels, col.name) ? labels[col.name] : '';
+  var disabled = !!(disabledMap && disabledMap[col.name]);
+  var headerClickTimer = null;
+  var renameInput = null;
 
   var header = document.createElement('div');
-  header.className = 'col-item' + (expandedCol === col.name ? ' expanded' : '');
+  header.className = 'col-item' + (expandedCol === col.name ? ' expanded' : '') + (disabled ? ' disabled' : '');
 
-  var nameEl  = el('div', 'col-item-name', col.name);
+  var nameEl  = el('div', 'col-item-name', labelValue || defaultLabel);
   var countEl = el('div', 'col-item-count', (col.count || 0) + ' docs');
+
+  var toggleWrap = document.createElement('label');
+  toggleWrap.className = 'toggle-switch';
+
+  var toggleInput = document.createElement('input');
+  toggleInput.type = 'checkbox';
+  toggleInput.checked = !disabled;
+
+  var toggleSlider = document.createElement('span');
+  toggleSlider.className = 'toggle-slider';
+
+  toggleWrap.appendChild(toggleInput);
+  toggleWrap.appendChild(toggleSlider);
 
   var delBtn = document.createElement('button');
   delBtn.className = 'btn btn-danger btn-sm';
   delBtn.textContent = 'Delete';
 
+  function currentLabel() {
+    return labelValue || defaultLabel;
+  }
+
+  function renderLabel() {
+    if (renameInput) return;
+    nameEl.textContent = currentLabel();
+  }
+
+  function finishRename(save, originalValue) {
+    if (!renameInput) return;
+    var inputEl = renameInput;
+    var nextValue = inputEl.value.trim();
+    renameInput = null;
+    renderLabel();
+    if (!save) return;
+    callApi('rename_collection_label', col.name, nextValue).then(function(r) {
+      if (r && r.ok) {
+        labelValue = nextValue;
+        if (labels) labels[col.name] = nextValue;
+        renderLabel();
+        showToast(r.msg || ('Renamed: ' + currentLabel()), 'ok');
+      } else {
+        renderLabel();
+        showToast((r && r.msg) || 'Rename failed', 'err');
+      }
+    });
+  }
+
+  function startRename() {
+    if (renameInput) return;
+    var originalValue = currentLabel();
+    nameEl.textContent = '';
+    renameInput = document.createElement('input');
+    renameInput.type = 'text';
+    renameInput.className = 'col-rename-input';
+    renameInput.value = originalValue;
+    nameEl.appendChild(renameInput);
+    renameInput.focus();
+    renameInput.select();
+
+    renameInput.addEventListener('click', function(e) { e.stopPropagation(); });
+    renameInput.addEventListener('dblclick', function(e) { e.stopPropagation(); });
+    renameInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        finishRename(true, originalValue);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        finishRename(false, originalValue);
+      }
+    });
+    renameInput.addEventListener('blur', function() {
+      finishRename(true, originalValue);
+    });
+  }
+
   header.appendChild(nameEl);
   header.appendChild(countEl);
+  header.appendChild(toggleWrap);
   header.appendChild(delBtn);
 
   // Search area
@@ -1066,8 +1154,7 @@ function buildColItem(col) {
   wrap.appendChild(searchArea);
 
   // Events
-  header.addEventListener('click', function(e) {
-    if (e.target === delBtn) return;
+  function toggleExpanded() {
     if (expandedCol === col.name) {
       expandedCol = null;
       header.classList.remove('expanded');
@@ -1079,6 +1166,39 @@ function buildColItem(col) {
       header.classList.add('expanded');
       searchArea.classList.add('visible');
     }
+  }
+
+  header.addEventListener('click', function(e) {
+    if (delBtn.contains(e.target) || toggleWrap.contains(e.target) || (renameInput && renameInput.contains(e.target))) return;
+    clearTimeout(headerClickTimer);
+    headerClickTimer = setTimeout(toggleExpanded, 220);
+  });
+
+  nameEl.addEventListener('dblclick', function(e) {
+    clearTimeout(headerClickTimer);
+    e.preventDefault();
+    e.stopPropagation();
+    startRename();
+  });
+
+  toggleWrap.addEventListener('click', function(e) {
+    e.stopPropagation();
+  });
+
+  toggleInput.addEventListener('change', function(e) {
+    e.stopPropagation();
+    callApi('toggle_collection', col.name).then(function(r) {
+      if (r && r.ok) {
+        disabled = !!r.disabled;
+        if (disabledMap) disabledMap[col.name] = disabled;
+        toggleInput.checked = !disabled;
+        header.classList.toggle('disabled', disabled);
+        showToast((disabled ? 'Disabled' : 'Enabled') + ': ' + currentLabel(), 'ok');
+      } else {
+        toggleInput.checked = !disabled;
+        showToast((r && r.msg) || 'Toggle failed', 'err');
+      }
+    });
   });
 
   delBtn.addEventListener('click', function() {
@@ -1135,6 +1255,43 @@ function buildColItem(col) {
   return wrap;
 }
 
+// Configurable owner labels — users can rename these
+var ownerLabels = {
+  'claude': "Kael's Collections",
+  'gemini': "Seren's Collections",
+  'codex': "Solace's Collections",
+  'shared': "Shared Collections",
+};
+
+function parseOwner(colName) {
+  if (colName.indexOf('claude--') === 0) return { owner: 'claude', topic: colName.substring(8) };
+  if (colName.indexOf('gemini--') === 0) return { owner: 'gemini', topic: colName.substring(8) };
+  if (colName.indexOf('codex--') === 0) return { owner: 'codex', topic: colName.substring(7) };
+  return { owner: 'shared', topic: colName };
+}
+
+function buildOwnerSection(ownerKey, collections, labels, disabledMap) {
+  var section = document.createElement('div');
+  section.style.marginBottom = '16px';
+
+  var header = document.createElement('div');
+  header.style.cssText = 'font-size:13px; font-weight:600; color:var(--ember); margin-bottom:8px; padding:6px 10px; background:rgba(255,120,32,0.08); border-radius:6px; border-left:3px solid var(--ember); display:flex; justify-content:space-between; align-items:center;';
+  var label = document.createElement('span');
+  label.textContent = ownerLabels[ownerKey] || ownerKey;
+  header.appendChild(label);
+  var count = document.createElement('span');
+  count.style.cssText = 'font-size:11px; color:var(--fg-muted); font-weight:400;';
+  count.textContent = collections.length + ' collection' + (collections.length !== 1 ? 's' : '');
+  header.appendChild(count);
+  section.appendChild(header);
+
+  collections.forEach(function(col) {
+    section.appendChild(buildColItem(col, labels, disabledMap));
+  });
+
+  return section;
+}
+
 function loadCollections() {
   var list = document.getElementById('colList');
   list.textContent = '';
@@ -1146,7 +1303,16 @@ function loadCollections() {
   loadRow.appendChild(el('span', null, ' Loading collections...'));
   list.appendChild(loadRow);
 
-  callApi('get_collections').then(function(r) {
+  Promise.all([
+    callApi('get_collections'),
+    callApi('get_collection_labels'),
+    callApi('get_collection_states')
+  ]).then(function(results) {
+    var r = results[0];
+    var labelsRes = results[1];
+    var statesRes = results[2];
+    var labels = labelsRes && labelsRes.ok && labelsRes.labels ? labelsRes.labels : {};
+    var disabledMap = statesRes && statesRes.ok && statesRes.disabled ? statesRes.disabled : {};
     list.textContent = '';
     if (!r || !r.ok || !r.collections) {
       list.appendChild(buildEmptyState('No collections found'));
@@ -1157,8 +1323,22 @@ function loadCollections() {
       list.appendChild(buildEmptyState('No collections yet \u2014 create one to get started'));
       return;
     }
+
+    // Group by owner
+    var groups = { claude: [], gemini: [], codex: [], shared: [] };
     cols.forEach(function(col) {
-      list.appendChild(buildColItem(col));
+      var parsed = parseOwner(col.name);
+      col.displayName = parsed.topic;
+      if (!groups[parsed.owner]) groups[parsed.owner] = [];
+      groups[parsed.owner].push(col);
+    });
+
+    // Render in order: the current AI first, then others, then shared last
+    var order = ['claude', 'gemini', 'codex', 'shared'];
+    order.forEach(function(key) {
+      if (groups[key] && groups[key].length > 0) {
+        list.appendChild(buildOwnerSection(key, groups[key], labels, disabledMap));
+      }
     });
   });
 }
