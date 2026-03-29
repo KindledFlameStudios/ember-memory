@@ -521,6 +521,27 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
+    def get_activity_log(self, limit=20):
+        """Get recent activity log entries for the dashboard feed."""
+        try:
+            cfg = load_config()
+            log_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "activity.jsonl")
+            if not os.path.exists(log_path):
+                return {"ok": True, "entries": []}
+            entries = []
+            with open(log_path, "r") as f:
+                lines = f.readlines()
+            for line in reversed(lines[-limit:]):
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except:
+                        pass
+            return {"ok": True, "entries": entries}
+        except Exception as e:
+            return {"ok": False, "entries": [], "msg": str(e)}
+
     def get_heat_map(self):
         """Get all heat values for visualization with metadata."""
         try:

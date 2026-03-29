@@ -152,10 +152,11 @@ html, body {
 
 /* Heat map */
 .heat-map-area { min-height: 180px; display: flex; flex-direction: column; gap: 4px; }
-.heat-bar-row { display: flex; align-items: center; gap: 8px; height: 20px; }
+.heat-bar-row { display: flex; align-items: center; gap: 8px; height: 20px; cursor: pointer; }
+.heat-bar-row:hover { background: rgba(255,120,32,0.06); border-radius: 4px; }
 .heat-bar-label {
   font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
-  width: 140px; flex-shrink: 0; text-overflow: ellipsis; overflow: hidden;
+  width: 220px; flex-shrink: 0; text-overflow: ellipsis; overflow: hidden;
   white-space: nowrap; text-align: right;
 }
 .heat-bar-track {
@@ -165,6 +166,70 @@ html, body {
 .heat-bar-val {
   font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
   width: 36px; flex-shrink: 0; text-align: right;
+}
+.heat-detail {
+  margin: 4px 0 8px 0; padding: 10px 14px; border-radius: 6px;
+  background: var(--bg-raised); border-left: 3px solid var(--ember);
+  font-size: 12px; line-height: 1.5; display: none;
+}
+.heat-detail.open { display: block; }
+.heat-detail-collection {
+  font-family: var(--font-mono); font-size: 10px; color: var(--ember);
+  margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.heat-detail-content {
+  color: var(--fg); white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-mono); font-size: 11px; max-height: 200px; overflow-y: auto;
+}
+.heat-detail-meta {
+  font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
+  margin-top: 6px; display: flex; gap: 16px;
+}
+.retrieval-prompt {
+  font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted);
+  padding: 8px 12px; background: rgba(255,120,32,0.05); border-radius: 4px;
+  margin-bottom: 10px; border-left: 2px solid var(--ember);
+}
+.retrieval-prompt-label { font-size: 10px; color: var(--ember); text-transform: uppercase; margin-bottom: 2px; }
+.retrieval-result {
+  padding: 10px 12px; margin-bottom: 6px; border-radius: 6px;
+  background: var(--bg-raised); border-left: 3px solid var(--ember);
+}
+.retrieval-result-hdr {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 6px;
+}
+.retrieval-result-collection {
+  font-family: var(--font-mono); font-size: 10px; color: var(--ember);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.retrieval-result-score {
+  font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
+}
+.retrieval-result-content {
+  font-family: var(--font-mono); font-size: 11px; color: var(--fg);
+  white-space: pre-wrap; word-break: break-word; line-height: 1.5;
+}
+.retrieval-meta-bar {
+  display: flex; gap: 12px; margin-top: 8px; padding-top: 6px;
+  font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+.activity-entry {
+  padding: 8px 12px; margin-bottom: 4px; border-radius: 4px;
+  background: var(--bg-raised); font-family: var(--font-mono); font-size: 11px;
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+}
+.activity-entry-prompt {
+  flex: 1; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.activity-entry-stats {
+  display: flex; gap: 10px; flex-shrink: 0; color: var(--fg-muted); font-size: 10px;
+}
+.activity-entry-time { color: var(--fg-muted); font-size: 10px; flex-shrink: 0; }
+.activity-hit-badge {
+  background: rgba(255,120,32,0.15); color: var(--ember); padding: 1px 6px;
+  border-radius: 8px; font-size: 10px;
 }
 
 /* Connection graph */
@@ -407,6 +472,10 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
           <div class="stat-label">Heat Mode</div>
           <div class="mode-badge" id="heatModeBadge">—</div>
         </div>
+        <div class="stat-card clickable" id="resetEngineCard" title="Reset all Engine state" style="border-color: #662222;">
+          <div class="stat-label">Engine</div>
+          <div class="stat-value" style="font-size:12px; color:#ff6666;">RESET</div>
+        </div>
       </div>
 
       <div class="panel">
@@ -417,6 +486,31 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
         <div class="panel-body">
           <div class="heat-map-area" id="heatMapArea">
             <div class="loading-text"><div class="spinner"></div> Loading heat data...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-hdr">
+          <div class="panel-hdr-title">Last Retrieval</div>
+          <span class="refresh-badge" id="retrievalRefreshTime"></span>
+        </div>
+        <div class="panel-body" id="lastRetrievalArea">
+          <div class="empty-state">
+            <div class="empty-icon">&#x1F50D;</div>
+            <span>Waiting for first retrieval...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-hdr">
+          <div class="panel-hdr-title">Activity Feed</div>
+          <span class="refresh-badge" id="activityRefreshTime"></span>
+        </div>
+        <div class="panel-body" id="activityFeedArea">
+          <div class="empty-state">
+            <span>No activity yet — send a message to your AI</span>
           </div>
         </div>
       </div>
@@ -572,6 +666,15 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
               <button class="btn btn-secondary btn-sm" id="btnCheckOllama">Check</button>
             </div>
           </div>
+          <div class="setting-row" style="margin-top:8px;">
+            <div>
+              <div class="setting-label">Embedding Model</div>
+              <div class="setting-hint">Select which Ollama model to use for embeddings</div>
+            </div>
+            <select id="ollamaModelSelect" class="medium">
+              <option value="">Detecting models...</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -653,6 +756,20 @@ function safeNum(v, fallback) {
   return isNaN(n) ? (fallback || 0) : n;
 }
 
+function formatActivityTime(ts) {
+  if (ts === null || ts === undefined || ts === '') return '--:--:--';
+  var value = ts;
+  if (typeof value === 'number') {
+    if (value < 1000000000000) value = value * 1000;
+  } else if (/^\d+(\.\d+)?$/.test(String(value))) {
+    value = Number(value);
+    if (value < 1000000000000) value = value * 1000;
+  }
+  var date = new Date(value);
+  if (isNaN(date.getTime())) return '--:--:--';
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
 // Safe wrapper around pywebview API calls
 function callApi(method) {
   var args = Array.prototype.slice.call(arguments, 1);
@@ -717,7 +834,7 @@ function setEngineAlive(alive) {
 
 function loadDashboard() {
   callApi('get_engine_stats').then(function(r) {
-    if (!r || !r.ok) return;
+    if (!r || !r.ok) { setEngineAlive(false); return; }
     var s = r.stats || {};
     var memCount  = s.total_memories_tracked || 0;
     var hotCount  = s.hot_memories           || 0;
@@ -736,11 +853,13 @@ function loadDashboard() {
       hotEl.className = 'stat-value' + (hotCount > 0 ? ' hot' : '');
     }
 
-    setEngineAlive(tickCount > 0);
+    setEngineAlive(true);
     setTextById('heatRefreshTime', nowStr());
   });
 
   loadHeatMap();
+  loadLastRetrieval();
+  loadActivityFeed();
   loadConnGraph();
 }
 
@@ -757,17 +876,28 @@ function heatColor(norm) {
   return 'rgb(255,' + g2 + ',0)';
 }
 
-function buildHeatBarRow(id, val, maxVal) {
+function buildHeatBarRow(id, val, maxVal, meta) {
   var norm = maxVal > 0 ? val / maxVal : 0;
   var pct  = Math.max(2, Math.round(norm * 100));
   var color = heatColor(norm);
-  var shortId = id.length > 18 ? '\u2026' + id.slice(-16) : id;
+
+  // Use metadata for readable label: [collection] preview...
+  var label = id.length > 18 ? '\u2026' + id.slice(-16) : id;
+  var tooltip = id;
+  if (meta && meta.collection) {
+    var col = meta.collection.replace(/^claude--|^gemini--|^codex--/, '');
+    var preview = meta.preview || '';
+    if (preview.length > 50) preview = preview.substring(0, 50) + '\u2026';
+    label = col + (preview ? ': ' + preview : '');
+    if (label.length > 40) label = label.substring(0, 40) + '\u2026';
+    tooltip = meta.collection + ' | ' + (meta.preview || id);
+  }
 
   var row = document.createElement('div');
   row.className = 'heat-bar-row';
 
-  var lbl = el('div', 'heat-bar-label', shortId);
-  lbl.title = id;
+  var lbl = el('div', 'heat-bar-label', label);
+  lbl.title = tooltip;
 
   var track = document.createElement('div');
   track.className = 'heat-bar-track';
@@ -783,7 +913,43 @@ function buildHeatBarRow(id, val, maxVal) {
   row.appendChild(lbl);
   row.appendChild(track);
   row.appendChild(valEl);
-  return row;
+
+  // Build expandable detail panel
+  var wrapper = document.createElement('div');
+  wrapper.appendChild(row);
+
+  if (meta && meta.preview) {
+    var detail = document.createElement('div');
+    detail.className = 'heat-detail';
+
+    var colDiv = document.createElement('div');
+    colDiv.className = 'heat-detail-collection';
+    colDiv.textContent = meta.collection || 'unknown';
+    detail.appendChild(colDiv);
+
+    var contentDiv = document.createElement('div');
+    contentDiv.className = 'heat-detail-content';
+    contentDiv.textContent = meta.preview;
+    detail.appendChild(contentDiv);
+
+    var metaDiv = document.createElement('div');
+    metaDiv.className = 'heat-detail-meta';
+    var heatSpan = document.createElement('span');
+    heatSpan.textContent = 'Heat: ' + (typeof val === 'number' ? val.toFixed(2) : val);
+    var idSpan = document.createElement('span');
+    idSpan.textContent = 'ID: ' + id.substring(0, 24) + '\u2026';
+    metaDiv.appendChild(heatSpan);
+    metaDiv.appendChild(idSpan);
+    detail.appendChild(metaDiv);
+
+    wrapper.appendChild(detail);
+
+    row.addEventListener('click', function() {
+      detail.classList.toggle('open');
+    });
+  }
+
+  return wrapper;
 }
 
 function loadHeatMap() {
@@ -802,6 +968,7 @@ function loadHeatMap() {
       return;
     }
 
+    var meta = r.meta || {};
     var entries = Object.entries(r.heat)
       .sort(function(a, b) { return b[1] - a[1]; })
       .slice(0, 20);
@@ -809,7 +976,125 @@ function loadHeatMap() {
     var maxVal = entries.length > 0 ? entries[0][1] : 1;
     area.textContent = '';
     entries.forEach(function(entry) {
-      area.appendChild(buildHeatBarRow(entry[0], entry[1], maxVal));
+      area.appendChild(buildHeatBarRow(entry[0], entry[1], maxVal, meta[entry[0]]));
+    });
+  });
+}
+
+// Last Retrieval panel
+function loadLastRetrieval() {
+  var area = document.getElementById('lastRetrievalArea');
+  if (!area) return;
+  setTextById('retrievalRefreshTime', nowStr());
+
+  callApi('get_last_retrieval').then(function(r) {
+    if (!r || !r.ok || !r.retrieval || !r.retrieval.results) {
+      area.textContent = '';
+      var empt = document.createElement('div');
+      empt.className = 'empty-state';
+      var ico = el('div', 'empty-icon', '\uD83D\uDD0D');
+      var msg = el('span', null, 'Waiting for first retrieval...');
+      empt.appendChild(ico);
+      empt.appendChild(msg);
+      area.appendChild(empt);
+      return;
+    }
+
+    var ret = r.retrieval;
+    area.textContent = '';
+
+    // Prompt that triggered this retrieval
+    var promptBox = document.createElement('div');
+    promptBox.className = 'retrieval-prompt';
+    var promptLabel = document.createElement('div');
+    promptLabel.className = 'retrieval-prompt-label';
+    promptLabel.textContent = 'Query (' + ret.ai_id + ') \u2022 ' + (ret.elapsed_ms || '?') + 'ms \u2022 ' + ret.results.length + ' results';
+    promptBox.appendChild(promptLabel);
+    var promptText = document.createElement('div');
+    promptText.textContent = ret.prompt || '(empty)';
+    promptBox.appendChild(promptText);
+    area.appendChild(promptBox);
+
+    // Each result
+    ret.results.forEach(function(result, i) {
+      var card = document.createElement('div');
+      card.className = 'retrieval-result';
+
+      var hdr = document.createElement('div');
+      hdr.className = 'retrieval-result-hdr';
+
+      var colName = document.createElement('span');
+      colName.className = 'retrieval-result-collection';
+      colName.textContent = result.collection;
+      hdr.appendChild(colName);
+
+      var scoreText = document.createElement('span');
+      scoreText.className = 'retrieval-result-score';
+      var simPct = Math.round((result.similarity || 0) * 100);
+      var compPct = Math.round((result.composite_score || 0) * 100);
+      scoreText.textContent = simPct + '% sim \u2022 ' + compPct + '% composite';
+      hdr.appendChild(scoreText);
+
+      card.appendChild(hdr);
+
+      var content = document.createElement('div');
+      content.className = 'retrieval-result-content';
+      content.textContent = result.content || '(empty)';
+      card.appendChild(content);
+
+      area.appendChild(card);
+    });
+  });
+}
+
+function loadActivityFeed() {
+  var area = document.getElementById('activityFeedArea');
+  if (!area) return;
+  setTextById('activityRefreshTime', nowStr());
+
+  callApi('get_activity_log', 20).then(function(r) {
+    area.textContent = '';
+
+    if (!r || !r.ok || !r.entries || r.entries.length === 0) {
+      var empt = document.createElement('div');
+      empt.className = 'empty-state';
+      var msg = document.createElement('span');
+      msg.textContent = 'No activity yet — send a message to your AI';
+      empt.appendChild(msg);
+      area.appendChild(empt);
+      return;
+    }
+
+    r.entries.forEach(function(entry) {
+      var row = document.createElement('div');
+      row.className = 'activity-entry';
+
+      var timeEl = document.createElement('div');
+      timeEl.className = 'activity-entry-time';
+      timeEl.textContent = formatActivityTime(entry.ts);
+      row.appendChild(timeEl);
+
+      var promptEl = document.createElement('div');
+      promptEl.className = 'activity-entry-prompt';
+      var promptText = entry.prompt || '(empty prompt)';
+      promptEl.textContent = promptText;
+      promptEl.title = promptText;
+      row.appendChild(promptEl);
+
+      var statsEl = document.createElement('div');
+      statsEl.className = 'activity-entry-stats';
+
+      var hitBadge = document.createElement('span');
+      hitBadge.className = 'activity-hit-badge';
+      hitBadge.textContent = String(entry.hits || 0) + ' hits';
+      statsEl.appendChild(hitBadge);
+
+      var elapsedEl = document.createElement('span');
+      elapsedEl.textContent = String(entry.elapsed_ms || 0) + 'ms';
+      statsEl.appendChild(elapsedEl);
+
+      row.appendChild(statsEl);
+      area.appendChild(row);
     });
   });
 }
@@ -993,6 +1278,18 @@ document.getElementById('heatModeCard').addEventListener('click', function() {
       showToast('Heat mode: ' + next, 'ok');
     } else {
       showToast((r && r.msg) || 'Failed to set mode', 'err');
+    }
+  });
+});
+
+document.getElementById('resetEngineCard').addEventListener('click', function() {
+  if (!confirm('Reset all Engine state? This clears heat map, connections, and metadata. Cannot be undone.')) return;
+  callApi('reset_engine').then(function(r) {
+    if (r && r.ok) {
+      showToast(r.msg || 'Engine reset', 'ok');
+      loadDashboard();
+    } else {
+      showToast((r && r.msg) || 'Reset failed', 'err');
     }
   });
 });
@@ -1417,6 +1714,7 @@ function loadSettings() {
     if (mp && r.max_preview_chars != null) mp.value = r.max_preview_chars;
 
     checkOllamaStatus();
+    loadOllamaModels();
   });
 }
 
@@ -1436,7 +1734,72 @@ function checkOllamaStatus() {
   });
 }
 
-document.getElementById('btnCheckOllama').addEventListener('click', checkOllamaStatus);
+document.getElementById('btnCheckOllama').addEventListener('click', function() {
+  checkOllamaStatus();
+  loadOllamaModels();
+});
+
+function loadOllamaModels() {
+  var sel = document.getElementById('ollamaModelSelect');
+  if (!sel) return;
+  callApi('get_ollama_models').then(function(r) {
+    if (!r || !r.ok) {
+      sel.innerHTML = '';
+      var opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'Ollama not reachable';
+      sel.appendChild(opt);
+      return;
+    }
+    sel.innerHTML = '';
+    var current = r.current || 'bge-m3';
+    // Embedding models first, then others
+    var embeds = r.models.filter(function(m) { return m.is_embedding; });
+    var others = r.models.filter(function(m) { return !m.is_embedding; });
+
+    if (embeds.length > 0) {
+      var grp = document.createElement('optgroup');
+      grp.label = 'Embedding Models';
+      embeds.forEach(function(m) {
+        var opt = document.createElement('option');
+        opt.value = m.name;
+        opt.textContent = m.name + (m.size_gb ? ' (' + m.size_gb + ' GB)' : '');
+        if (m.name === current || current.indexOf(m.name.split(':')[0]) === 0) opt.selected = true;
+        grp.appendChild(opt);
+      });
+      sel.appendChild(grp);
+    }
+
+    if (others.length > 0) {
+      var grp2 = document.createElement('optgroup');
+      grp2.label = 'Other Models';
+      others.forEach(function(m) {
+        var opt = document.createElement('option');
+        opt.value = m.name;
+        opt.textContent = m.name + (m.size_gb ? ' (' + m.size_gb + ' GB)' : '');
+        if (m.name === current) opt.selected = true;
+        grp2.appendChild(opt);
+      });
+      sel.appendChild(grp2);
+    }
+
+    if (r.models.length === 0) {
+      var opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No models found';
+      sel.appendChild(opt);
+    }
+  });
+}
+
+document.getElementById('ollamaModelSelect').addEventListener('change', function() {
+  var model = this.value;
+  if (!model) return;
+  callApi('set_embedding_model', model).then(function(r) {
+    if (r && r.ok) showToast(r.msg || 'Model switched', 'ok');
+    else showToast((r && r.msg) || 'Failed to switch model', 'err');
+  });
+});
 
 document.getElementById('btnBrowse').addEventListener('click', function() {
   callApi('browse_directory').then(function(r) {
