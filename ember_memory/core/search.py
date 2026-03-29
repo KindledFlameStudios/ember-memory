@@ -60,6 +60,7 @@ class RetrievalResult:
 def retrieve(
     prompt: str,
     ai_id: str | None = None,
+    workspace: str | None = None,
     backend: MemoryBackend | None = None,
     embedder: EmbeddingProvider | None = None,
     limit: int = 5,
@@ -98,6 +99,16 @@ def retrieve(
                 for name in visible
                 if engine_state.get_config(f"collection_disabled_{name}", "false") != "true"
             ]
+
+    if workspace and engine_db_path:
+        engine = _get_engine(engine_db_path)
+        if engine:
+            state = engine[0]
+            ws_config = state.get_workspace_config()
+            ws = ws_config.get(workspace)
+            if ws and "collections" in ws:
+                ws_enabled = {k for k, v in ws["collections"].items() if v}
+                visible = [v for v in visible if v in ws_enabled]
 
     if not visible:
         return []

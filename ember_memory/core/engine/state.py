@@ -101,6 +101,12 @@ class EngineState:
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL DEFAULT ''
             );
+
+            CREATE TABLE IF NOT EXISTS memory_meta (
+                memory_id   TEXT PRIMARY KEY,
+                collection  TEXT NOT NULL DEFAULT '',
+                preview     TEXT NOT NULL DEFAULT ''
+            );
             """
         )
         conn.commit()
@@ -182,6 +188,42 @@ class EngineState:
             (_ai_key(ai_id),),
         ).fetchall()
         return {row["memory_id"]: float(row["heat"]) for row in rows}
+
+    # ── Memory Metadata ────────────────────────────────────────────────────
+
+    def upsert_memory_meta(self, memory_id: str, collection: str, preview: str) -> None:
+        """Store or update metadata for a memory (collection + content preview)."""
+        self._conn.execute(
+            """
+            INSERT INTO memory_meta (memory_id, collection, preview)
+            VALUES (?, ?, ?)
+            ON CONFLICT(memory_id) DO UPDATE SET
+                collection = excluded.collection,
+                preview = excluded.preview
+            """,
+            (memory_id, collection, preview[:500]),
+        )
+        self._conn.commit()
+
+    def get_memory_meta(self, memory_id: str) -> dict | None:
+        """Return {collection, preview} for a memory, or None."""
+        row = self._conn.execute(
+            "SELECT collection, preview FROM memory_meta WHERE memory_id = ?",
+            (memory_id,),
+        ).fetchone()
+        if row:
+            return {"collection": row["collection"], "preview": row["preview"]}
+        return None
+
+    def get_all_memory_meta(self) -> dict[str, dict]:
+        """Return {memory_id: {collection, preview}} for all tracked memories."""
+        rows = self._conn.execute(
+            "SELECT memory_id, collection, preview FROM memory_meta"
+        ).fetchall()
+        return {
+            row["memory_id"]: {"collection": row["collection"], "preview": row["preview"]}
+            for row in rows
+        }
 
     # ── Connections ──────────────────────────────────────────────────────────
 
@@ -282,3 +324,17 @@ class EngineState:
             (key, value),
         )
         self._conn.commit()
+
+    def get_workspace_config(self):
+        """Get full workspace configuration as dict."""
+        raw = self.get_config("workspaces", "{}")
+        import json
+        try:
+            return json.loads(raw)
+        except Exception:
+            return {}
+
+    def save_workspace_config(self, config):
+        """Save workspace configuration."""
+        import json
+        self.set_config("workspaces", json.dumps(config))

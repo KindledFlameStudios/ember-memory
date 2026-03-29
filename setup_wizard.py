@@ -345,6 +345,47 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "collections": [], "msg": str(e)}
 
+    def get_workspaces(self):
+        """Get all workspace configurations."""
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            state = EngineState(db_path=db_path)
+            return {"ok": True, "workspaces": state.get_workspace_config()}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def save_workspace(self, name, label, collections):
+        """Create or update a workspace. collections is a dict of {col_name: bool}."""
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            state = EngineState(db_path=db_path)
+            ws_config = state.get_workspace_config()
+            ws_config[name] = {"label": label, "collections": collections}
+            state.save_workspace_config(ws_config)
+            return {"ok": True, "msg": f"Workspace '{label}' saved"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def delete_workspace(self, name):
+        """Delete a workspace."""
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            state = EngineState(db_path=db_path)
+            ws_config = state.get_workspace_config()
+            ws_config.pop(name, None)
+            state.save_workspace_config(ws_config)
+            return {"ok": True, "msg": f"Workspace '{name}' deleted"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
     def create_collection(self, name, scope="shared"):
         """Create a collection with optional AI namespace."""
         try:

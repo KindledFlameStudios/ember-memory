@@ -34,6 +34,7 @@ SESSION_ID = f"cc-{os.getppid()}"
 
 # AI namespace — controls which collections are visible during retrieval
 AI_ID = os.environ.get("EMBER_AI_ID", "claude")
+WORKSPACE = os.environ.get("EMBER_WORKSPACE", "")
 
 
 def debug_log(msg):
@@ -43,14 +44,17 @@ def debug_log(msg):
         f.write(f"[{datetime.now().isoformat()}] {msg}\n")
 
 
+LAST_RETRIEVAL = os.path.join(config.DATA_DIR, "last_retrieval.json")
+
+
 def write_activity(prompt_preview, results, elapsed_ms):
-    """Write one JSONL line to the activity log — always on, lightweight."""
+    """Write activity log + last retrieval snapshot for dashboard."""
     entry = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "session": SESSION_ID,
         "prompt": prompt_preview[:120],
         "hits": len(results),
-        "top_score": round(results[0].similarity, 3) if results else 0,
+        "top_score": round(results[0].composite_score, 3) if results else 0,
         "collections": list(set(r.collection for r in results)),
         "elapsed_ms": elapsed_ms,
     }
@@ -59,7 +63,30 @@ def write_activity(prompt_preview, results, elapsed_ms):
         with open(ACTIVITY_LOG, "a") as f:
             f.write(json.dumps(entry) + "\n")
     except Exception:
-        pass  # Never let logging break the hook
+        pass
+
+    # Write full last retrieval snapshot for dashboard
+    snapshot = {
+        "ts": entry["ts"],
+        "prompt": prompt_preview[:200],
+        "elapsed_ms": elapsed_ms,
+        "ai_id": AI_ID,
+        "results": [
+            {
+                "collection": r.collection,
+                "content": r.content,
+                "similarity": round(r.similarity, 4),
+                "composite_score": round(r.composite_score, 4),
+                "id": r.id[:32],
+            }
+            for r in results
+        ],
+    }
+    try:
+        with open(LAST_RETRIEVAL, "w") as f:
+            json.dump(snapshot, f, indent=2)
+    except Exception:
+        pass
 
 
 def main():
@@ -104,6 +131,7 @@ def main():
         results = retrieve(
             prompt=clean_prompt,
             ai_id=AI_ID,
+            workspace=WORKSPACE,
             backend=backend,
             embedder=embedder,
             limit=config.MAX_HOOK_RESULTS,
