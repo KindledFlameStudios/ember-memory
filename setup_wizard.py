@@ -577,6 +577,61 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
+    def rename_collection_label(self, col_name, new_label):
+        """Set a custom display label for a collection."""
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            state = EngineState(db_path=db_path)
+            state.set_config(f"collection_label_{col_name}", new_label)
+            return {"ok": True, "msg": f"Renamed to '{new_label}'"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def get_collection_labels(self):
+        """Get all custom collection labels."""
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            if not os.path.exists(db_path):
+                return {"ok": True, "labels": {}}
+            state = EngineState(db_path=db_path)
+            conn = state._conn
+            rows = conn.execute(
+                "SELECT key, value FROM config WHERE key LIKE 'collection_label_%'"
+            ).fetchall()
+            labels = {}
+            for row in rows:
+                col_name = row["key"].replace("collection_label_", "", 1)
+                labels[col_name] = row["value"]
+            return {"ok": True, "labels": labels}
+        except Exception as e:
+            return {"ok": False, "labels": {}, "msg": str(e)}
+
+    def get_collection_states(self):
+        """Get disabled states for all collections."""
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            if not os.path.exists(db_path):
+                return {"ok": True, "disabled": {}}
+            state = EngineState(db_path=db_path)
+            conn = state._conn
+            rows = conn.execute(
+                "SELECT key, value FROM config WHERE key LIKE 'collection_disabled_%'"
+            ).fetchall()
+            disabled = {}
+            for row in rows:
+                col_name = row["key"].replace("collection_disabled_", "", 1)
+                disabled[col_name] = row["value"] == "true"
+            return {"ok": True, "disabled": disabled}
+        except Exception as e:
+            return {"ok": False, "disabled": {}, "msg": str(e)}
+
     def detect_clis(self):
         """Detect which AI CLIs are installed."""
         clis = {}
