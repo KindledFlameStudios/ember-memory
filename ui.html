@@ -323,6 +323,24 @@ html, body {
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-muted); transition: background 0.3s, box-shadow 0.3s; }
 .status-dot.ok  { background: var(--success); box-shadow: 0 0 6px rgba(94,204,138,0.5); }
 .status-dot.err { background: var(--error); }
+.workspace-card { background: var(--bg-raised); border-radius: 8px; padding: 14px; margin-bottom: 10px; border-left: 3px solid var(--ember); }
+.workspace-title { font-size: 14px; font-weight: 600; color: var(--fg); margin-bottom: 8px; }
+.workspace-cols { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.workspace-col-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-family: var(--font-mono); padding: 3px 8px; border-radius: 12px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.1); user-select: none;
+}
+.workspace-col-chip input { accent-color: var(--ember); }
+.workspace-col-chip.active { background: rgba(255,120,32,0.2); border-color: var(--ember); color: var(--ember); }
+.workspace-col-chip.inactive { background: transparent; color: var(--fg-muted); opacity: 0.5; }
+.workspace-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.workspace-help { font-size: 11px; color: var(--fg-muted); margin-top: 8px; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 4px; font-family: var(--font-mono); }
+.workspace-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.workspace-summary { font-size: 11px; color: var(--fg-muted); }
+.workspace-name-hint { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); margin-bottom: 8px; }
+.workspace-label-input { width: 100%; margin-bottom: 10px; }
+.workspace-empty { margin-bottom: 10px; }
 
 /* CLI cards */
 .cli-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 14px; }
@@ -583,6 +601,34 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
     <div class="tab-panel" id="tab-settings">
 
       <div class="settings-section">
+        <div class="settings-section-title">Workspaces</div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="workspace-toolbar">
+            <div class="workspace-summary">Configure per-workspace collection search scopes.</div>
+            <button class="btn btn-primary btn-sm" id="btnWorkspaceToggle">New Workspace</button>
+          </div>
+
+          <div class="create-form" id="workspaceCreateForm">
+            <div class="form-row" style="margin-bottom:8px;">
+              <input type="text" class="medium" id="newWorkspaceName" placeholder="workspace-name" />
+              <input type="text" class="fluid" id="newWorkspaceLabel" placeholder="Display label" />
+            </div>
+            <div class="workspace-cols" id="newWorkspaceCollections"></div>
+            <div class="workspace-actions">
+              <button class="btn btn-secondary btn-sm" id="btnWorkspaceCancel">Cancel</button>
+              <button class="btn btn-primary btn-sm" id="btnCreateWorkspace">Create</button>
+            </div>
+          </div>
+
+          <div id="workspaceList">
+            <div class="loading-text"><div class="spinner"></div> Loading workspaces...</div>
+          </div>
+
+          <div class="workspace-help">Set EMBER_WORKSPACE=name when launching your CLI to activate a workspace. Each workspace controls which collections are searched.</div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-title">Embedding Provider</div>
         <div class="provider-cards">
           <div class="provider-card" data-provider="ollama" id="prov-ollama">
@@ -811,7 +857,10 @@ function initTabs() {
       } else {
         stopDashRefresh();
         if (tab === 'collections') loadCollections();
-        else if (tab === 'settings') loadSettings();
+        else if (tab === 'settings') {
+          loadSettings();
+          loadWorkspaces();
+        }
         else if (tab === 'cli') loadCLIStatus();
       }
     });
@@ -1325,7 +1374,7 @@ function buildColItem(col, labels, disabledMap) {
   header.className = 'col-item' + (expandedCol === col.name ? ' expanded' : '') + (disabled ? ' disabled' : '');
 
   var nameEl  = el('div', 'col-item-name', labelValue || defaultLabel);
-  var countEl = el('div', 'col-item-count', (col.count || 0) + ' docs');
+  var countEl = el('div', 'col-item-count', (col.count || 0) + ' chunks');
 
   var toggleWrap = document.createElement('label');
   toggleWrap.className = 'toggle-switch';
@@ -1679,6 +1728,315 @@ document.getElementById('btnCreateCol').addEventListener('click', function() {
 // =====================================================
 // SETTINGS
 // =====================================================
+
+var workspaceCollections = [];
+
+function setWorkspaceChipState(chip, active) {
+  chip.classList.toggle('active', !!active);
+  chip.classList.toggle('inactive', !active);
+}
+
+function buildWorkspaceChip(def, enabled) {
+  var chip = document.createElement('label');
+  chip.className = 'workspace-col-chip ' + (enabled ? 'active' : 'inactive');
+  chip.setAttribute('data-collection-name', def.name);
+  if (def.count != null) chip.title = def.name + ' (' + def.count + ' chunks)';
+
+  var input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = !!enabled;
+  input.setAttribute('data-collection-name', def.name);
+
+  var text = el('span', null, def.name);
+
+  chip.appendChild(input);
+  chip.appendChild(text);
+
+  input.addEventListener('change', function() {
+    setWorkspaceChipState(chip, input.checked);
+  });
+
+  return chip;
+}
+
+function listWorkspaceCollectionDefs(collections, workspaces) {
+  var defs = [];
+  var seen = {};
+
+  (collections || []).forEach(function(col) {
+    if (!col || !col.name || seen[col.name]) return;
+    seen[col.name] = true;
+    defs.push({ name: col.name, count: col.count });
+  });
+
+  Object.keys(workspaces || {}).forEach(function(name) {
+    var workspace = workspaces[name] || {};
+    var cols = workspace.collections || {};
+    Object.keys(cols).forEach(function(colName) {
+      if (!colName || seen[colName]) return;
+      seen[colName] = true;
+      defs.push({ name: colName, count: null });
+    });
+  });
+
+  defs.sort(function(a, b) { return a.name.localeCompare(b.name); });
+  return defs;
+}
+
+function readWorkspaceCollections(container) {
+  var collections = {};
+  if (!container) return collections;
+  container.querySelectorAll('input[type="checkbox"][data-collection-name]').forEach(function(input) {
+    collections[input.getAttribute('data-collection-name')] = !!input.checked;
+  });
+  return collections;
+}
+
+function resetWorkspaceForm() {
+  var form = document.getElementById('workspaceCreateForm');
+  var nameInput = document.getElementById('newWorkspaceName');
+  var labelInput = document.getElementById('newWorkspaceLabel');
+  var cols = document.getElementById('newWorkspaceCollections');
+
+  if (nameInput) nameInput.value = '';
+  if (labelInput) labelInput.value = '';
+  if (cols) {
+    cols.querySelectorAll('input[type="checkbox"][data-collection-name]').forEach(function(input) {
+      input.checked = false;
+      if (input.parentElement) setWorkspaceChipState(input.parentElement, false);
+    });
+  }
+  if (form) form.classList.remove('visible');
+}
+
+function renderWorkspaceCreateCollections() {
+  var container = document.getElementById('newWorkspaceCollections');
+  if (!container) return;
+  container.textContent = '';
+
+  if (workspaceCollections.length === 0) {
+    container.appendChild(el('div', 'workspace-summary', 'No collections available yet.'));
+    return;
+  }
+
+  workspaceCollections.forEach(function(def) {
+    container.appendChild(buildWorkspaceChip(def, false));
+  });
+}
+
+function renderWorkspaceCard(name, workspace) {
+  var card = document.createElement('div');
+  card.className = 'workspace-card';
+  card.setAttribute('data-workspace-name', name);
+
+  var title = el('div', 'workspace-title', workspace && workspace.label ? workspace.label : name);
+  var hint = el('div', 'workspace-name-hint', 'EMBER_WORKSPACE=' + name);
+
+  var labelInput = document.createElement('input');
+  labelInput.type = 'text';
+  labelInput.className = 'workspace-label-input';
+  labelInput.value = workspace && workspace.label ? workspace.label : name;
+  labelInput.placeholder = 'Workspace label';
+  labelInput.setAttribute('data-role', 'workspace-label');
+
+  labelInput.addEventListener('input', function() {
+    title.textContent = labelInput.value.trim() || name;
+  });
+
+  var cols = document.createElement('div');
+  cols.className = 'workspace-cols';
+  cols.setAttribute('data-role', 'workspace-cols');
+
+  if (workspaceCollections.length === 0) {
+    cols.appendChild(el('div', 'workspace-summary', 'No collections available yet.'));
+  } else {
+    var selected = (workspace && workspace.collections) || {};
+    workspaceCollections.forEach(function(def) {
+      cols.appendChild(buildWorkspaceChip(def, !!selected[def.name]));
+    });
+  }
+
+  var actions = document.createElement('div');
+  actions.className = 'workspace-actions';
+
+  var deleteBtn = document.createElement('button');
+  deleteBtn.className = 'btn btn-danger btn-sm';
+  deleteBtn.textContent = 'Delete';
+  deleteBtn.addEventListener('click', function() {
+    deleteWorkspace(name);
+  });
+
+  var saveBtn = document.createElement('button');
+  saveBtn.className = 'btn btn-primary btn-sm';
+  saveBtn.textContent = 'Save';
+  saveBtn.addEventListener('click', function() {
+    saveWorkspace(name);
+  });
+
+  actions.appendChild(deleteBtn);
+  actions.appendChild(saveBtn);
+
+  card.appendChild(title);
+  card.appendChild(hint);
+  card.appendChild(labelInput);
+  card.appendChild(cols);
+  card.appendChild(actions);
+  return card;
+}
+
+function findWorkspaceCard(name) {
+  var list = document.getElementById('workspaceList');
+  if (!list) return null;
+  var cards = list.querySelectorAll('.workspace-card[data-workspace-name]');
+  for (var i = 0; i < cards.length; i++) {
+    if (cards[i].getAttribute('data-workspace-name') === name) return cards[i];
+  }
+  return null;
+}
+
+function loadWorkspaces() {
+  var list = document.getElementById('workspaceList');
+  if (!list) return;
+
+  list.textContent = '';
+  var loadRow = document.createElement('div');
+  loadRow.className = 'loading-text';
+  var spin = document.createElement('div');
+  spin.className = 'spinner';
+  loadRow.appendChild(spin);
+  loadRow.appendChild(el('span', null, ' Loading workspaces...'));
+  list.appendChild(loadRow);
+
+  Promise.all([
+    callApi('get_workspaces'),
+    callApi('get_collections')
+  ]).then(function(results) {
+    var workspacesRes = results[0];
+    var collectionsRes = results[1];
+    var workspaces = workspacesRes && workspacesRes.ok && workspacesRes.workspaces ? workspacesRes.workspaces : {};
+
+    if (!workspacesRes || !workspacesRes.ok) {
+      workspaceCollections = listWorkspaceCollectionDefs(
+        collectionsRes && collectionsRes.ok ? collectionsRes.collections : [],
+        {}
+      );
+      renderWorkspaceCreateCollections();
+      list.textContent = '';
+      list.appendChild(buildEmptyState((workspacesRes && workspacesRes.msg) || 'Failed to load workspaces'));
+      return;
+    }
+
+    workspaceCollections = listWorkspaceCollectionDefs(
+      collectionsRes && collectionsRes.ok ? collectionsRes.collections : [],
+      workspaces
+    );
+    renderWorkspaceCreateCollections();
+
+    list.textContent = '';
+    var names = Object.keys(workspaces).sort();
+    if (names.length === 0) {
+      var empty = buildEmptyState('No workspaces yet — create one to define a search scope');
+      empty.classList.add('workspace-empty');
+      list.appendChild(empty);
+      return;
+    }
+
+    names.forEach(function(name) {
+      list.appendChild(renderWorkspaceCard(name, workspaces[name] || {}));
+    });
+  });
+}
+
+function saveWorkspace(name) {
+  var card = findWorkspaceCard(name);
+  if (!card) {
+    showToast('Workspace not found', 'err');
+    return;
+  }
+
+  var labelInput = card.querySelector('input[data-role="workspace-label"]');
+  var cols = card.querySelector('[data-role="workspace-cols"]');
+  var label = labelInput ? labelInput.value.trim() : '';
+  var collections = readWorkspaceCollections(cols);
+
+  callApi('save_workspace', name, label || name, collections).then(function(r) {
+    if (r && r.ok) {
+      showToast(r.msg || ('Workspace "' + name + '" saved'), 'ok');
+      loadWorkspaces();
+    } else {
+      showToast((r && r.msg) || 'Failed to save workspace', 'err');
+    }
+  });
+}
+
+function createWorkspace() {
+  var nameInput = document.getElementById('newWorkspaceName');
+  var labelInput = document.getElementById('newWorkspaceLabel');
+  var cols = document.getElementById('newWorkspaceCollections');
+  var name = nameInput ? nameInput.value.trim() : '';
+  var label = labelInput ? labelInput.value.trim() : '';
+
+  if (!name) {
+    showToast('Enter a workspace name', 'err');
+    return;
+  }
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(name)) {
+    showToast('Workspace name must be a slug: lowercase letters, numbers, - or _', 'err');
+    return;
+  }
+  if (findWorkspaceCard(name)) {
+    showToast('Workspace already exists', 'err');
+    return;
+  }
+
+  callApi('save_workspace', name, label || name, readWorkspaceCollections(cols)).then(function(r) {
+    if (r && r.ok) {
+      showToast(r.msg || ('Workspace "' + name + '" created'), 'ok');
+      resetWorkspaceForm();
+      loadWorkspaces();
+    } else {
+      showToast((r && r.msg) || 'Failed to create workspace', 'err');
+    }
+  });
+}
+
+function deleteWorkspace(name) {
+  if (!confirm('Delete workspace "' + name + '"?')) return;
+  callApi('delete_workspace', name).then(function(r) {
+    if (r && r.ok) {
+      showToast(r.msg || ('Workspace "' + name + '" deleted'), 'ok');
+      loadWorkspaces();
+    } else {
+      showToast((r && r.msg) || 'Failed to delete workspace', 'err');
+    }
+  });
+}
+
+document.getElementById('btnWorkspaceToggle').addEventListener('click', function() {
+  var form = document.getElementById('workspaceCreateForm');
+  if (!form) return;
+  form.classList.toggle('visible');
+  if (form.classList.contains('visible')) {
+    var nameInput = document.getElementById('newWorkspaceName');
+    if (nameInput) nameInput.focus();
+  }
+});
+
+document.getElementById('btnWorkspaceCancel').addEventListener('click', function() {
+  resetWorkspaceForm();
+});
+
+document.getElementById('btnCreateWorkspace').addEventListener('click', function() {
+  createWorkspace();
+});
+
+document.getElementById('newWorkspaceName').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') createWorkspace();
+});
+
+document.getElementById('newWorkspaceLabel').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') createWorkspace();
+});
 
 var currentProvider = 'ollama';
 
