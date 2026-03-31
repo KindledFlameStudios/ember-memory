@@ -293,6 +293,11 @@ html, body {
 .import-wizard.visible { display: block; }
 .import-wizard-title { font-size: 16px; font-weight: 600; color: var(--ember); margin-bottom: 4px; }
 .import-wizard-sub { font-size: 12px; color: var(--fg-muted); margin-bottom: 16px; }
+.import-mode-toggle { display: flex; gap: 0; margin-bottom: 16px; border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,120,32,0.2); }
+.import-mode-btn { flex: 1; padding: 8px 12px; background: transparent; border: none; color: var(--fg-muted); font-size: 12px; cursor: pointer; font-family: var(--font-mono); transition: all 0.2s; }
+.import-mode-btn.active { background: rgba(255,120,32,0.15); color: var(--ember); font-weight: 600; }
+.import-mode-panel { display: none; }
+.import-mode-panel.active { display: block; }
 .import-step { margin-bottom: 12px; }
 .import-step-label { font-size: 11px; font-weight: 600; color: var(--fg-muted); text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.5px; }
 .import-success { background: rgba(255,120,32,0.08); border-radius: 8px; padding: 14px; margin-top: 12px; border-left: 3px solid var(--ember); }
@@ -628,40 +633,68 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
       </div>
 
       <div class="import-wizard" id="importWizard">
-        <div class="import-wizard-title">Revive Your Context</div>
-        <div class="import-wizard-sub">Import old chats, notes, or docs — turn forgotten work into searchable memory</div>
+        <div class="import-wizard-title">Import Knowledge</div>
+        <div class="import-wizard-sub">Manage collection files. Add a folder into an existing collection or create a new collection from a folder import.</div>
 
-        <div class="import-step">
-          <div class="import-step-label">Step 1: What do you want to revive?</div>
-          <input type="text" id="importCollectionName" class="import-step-input" placeholder="project-name" />
+        <div class="import-mode-toggle">
+          <button type="button" class="import-mode-btn active" id="btnImportModeExisting">Add to Existing</button>
+          <button type="button" class="import-mode-btn" id="btnImportModeNew">Create New</button>
         </div>
 
-        <div class="import-step">
-          <div class="import-step-label">Step 2: Where is it?</div>
-          <div class="import-path-row">
-            <input type="text" id="importSourcePath" class="import-step-input" placeholder="/path/to/export-or-notes" />
-            <button class="btn btn-secondary btn-sm" id="btnImportBrowse">Browse</button>
+        <div class="import-mode-panel active" id="importModeExisting">
+          <div class="import-step">
+            <div class="import-step-label">1. Choose a collection</div>
+            <select id="importExistingCollection"></select>
           </div>
-          <div class="import-supported">Supports `.md`, `.txt`, `.json`, and `.jsonl` files, including CinderACE export folders.</div>
+
+          <div class="import-step">
+            <div class="import-step-label">2. Pick a source folder</div>
+            <div class="import-path-row">
+              <input type="text" id="importExistingSourcePath" class="import-step-input" readonly placeholder="Click Browse to select a folder..." />
+              <button class="btn btn-secondary btn-sm" id="btnImportExistingBrowse">Browse</button>
+            </div>
+            <div class="import-supported">Adds supported files from the selected folder into the existing collection.</div>
+          </div>
+
+          <div class="import-action-row">
+            <button class="btn btn-primary" id="btnRunAddToCollection">Import</button>
+          </div>
         </div>
 
-        <div class="import-step">
-          <div class="import-step-label">Step 3: Who should see it?</div>
-          <select id="importScope">
-            <option value="shared">shared</option>
-            <option value="claude">claude</option>
-            <option value="gemini">gemini</option>
-            <option value="codex">codex</option>
-          </select>
-        </div>
+        <div class="import-mode-panel" id="importModeNew">
+          <div class="import-step">
+            <div class="import-step-label">1. Pick a source folder</div>
+            <div class="import-path-row">
+              <input type="text" id="importNewSourcePath" class="import-step-input" readonly placeholder="Click Browse to select a folder..." />
+              <button class="btn btn-secondary btn-sm" id="btnImportNewBrowse">Browse</button>
+            </div>
+            <div class="import-supported">Supports .md, .txt, .json, and .jsonl files.</div>
+          </div>
 
-        <div class="import-action-row">
-          <button class="btn btn-primary" id="btnRunImport">Import</button>
+          <div class="import-step">
+            <div class="import-step-label">2. Collection name</div>
+            <input type="text" id="importCollectionName" class="import-step-input" placeholder="auto-filled from folder name" />
+            <div class="import-supported">Auto-filled from folder name. Edit if you'd like a different name.</div>
+          </div>
+
+          <div class="import-step">
+            <div class="import-step-label">3. Scope</div>
+            <select id="importScope">
+              <option value="shared">Shared</option>
+              <option value="claude">Kael</option>
+              <option value="gemini">Seren</option>
+              <option value="codex">Solace</option>
+            </select>
+          </div>
+
+          <div class="import-action-row">
+            <button class="btn btn-primary" id="btnRunImport">Create &amp; Import</button>
+          </div>
         </div>
 
         <div id="importSuccessHost"></div>
 
-        <div class="import-tip">Tip: Export AI chats with CinderACE, then import them here to revive old conversations.</div>
+        <div class="import-tip">Tip: Export AI chats with CinderACE, then import them here.</div>
       </div>
 
       <div class="col-list" id="colList">
@@ -1928,7 +1961,14 @@ function loadCollections() {
     renderCollectionsQuickLaunch();
     list.textContent = '';
     if (!r || !r.ok || !r.collections) {
-      list.appendChild(buildEmptyState('No collections found'));
+      // API bridge might not be ready yet — retry once after a short delay
+      if (!loadCollections._retried) {
+        loadCollections._retried = true;
+        setTimeout(function() { loadCollections._retried = false; loadCollections(); }, 800);
+      } else {
+        list.appendChild(buildEmptyState('No collections found'));
+        loadCollections._retried = false;
+      }
       return;
     }
     var cols = r.collections;
@@ -1968,6 +2008,107 @@ function clearImportSuccess() {
   var host = document.getElementById('importSuccessHost');
   if (!host) return;
   host.textContent = '';
+}
+
+var importWizardMode = 'existing';
+
+function sanitizeImportCollectionName(path) {
+  var parts = String(path || '').replace(/\/+$/, '').split('/');
+  var folderName = parts[parts.length - 1] || 'imported';
+  var sanitized = folderName
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return sanitized || 'imported';
+}
+
+function getImportScopeLabel(owner) {
+  if (owner === 'claude') return 'Kael';
+  if (owner === 'gemini') return 'Seren';
+  if (owner === 'codex') return 'Solace';
+  return 'Shared';
+}
+
+function getImportQueryTopic(collectionName) {
+  return parseOwner(collectionName || '').topic || String(collectionName || '');
+}
+
+function focusImportWizard() {
+  if (importWizardMode === 'existing') {
+    var existingSelect = document.getElementById('importExistingCollection');
+    if (existingSelect) existingSelect.focus();
+    return;
+  }
+  var nameInput = document.getElementById('importCollectionName');
+  if (nameInput) nameInput.focus();
+}
+
+function setImportMode(mode) {
+  importWizardMode = mode === 'new' ? 'new' : 'existing';
+
+  var existingBtn = document.getElementById('btnImportModeExisting');
+  var newBtn = document.getElementById('btnImportModeNew');
+  var existingPanel = document.getElementById('importModeExisting');
+  var newPanel = document.getElementById('importModeNew');
+
+  if (existingBtn) existingBtn.classList.toggle('active', importWizardMode === 'existing');
+  if (newBtn) newBtn.classList.toggle('active', importWizardMode === 'new');
+  if (existingPanel) existingPanel.classList.toggle('active', importWizardMode === 'existing');
+  if (newPanel) newPanel.classList.toggle('active', importWizardMode === 'new');
+
+  var wizard = document.getElementById('importWizard');
+  if (wizard && wizard.classList.contains('visible')) focusImportWizard();
+}
+
+function refreshImportCollections(selectedName) {
+  var select = document.getElementById('importExistingCollection');
+  var btn = document.getElementById('btnRunAddToCollection');
+  if (!select) return Promise.resolve();
+
+  select.disabled = true;
+  select.textContent = '';
+
+  var loadingOption = document.createElement('option');
+  loadingOption.value = '';
+  loadingOption.textContent = 'Loading collections...';
+  select.appendChild(loadingOption);
+
+  return callApi('get_collections').then(function(r) {
+    select.textContent = '';
+
+    if (!r || !r.ok || !r.collections || r.collections.length === 0) {
+      var emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.textContent = 'No collections available';
+      select.appendChild(emptyOption);
+      select.disabled = true;
+      if (btn) btn.disabled = true;
+      return;
+    }
+
+    r.collections.forEach(function(col, index) {
+      var option = document.createElement('option');
+      var rawName = String(col.name || '');
+      var parsed = parseOwner(rawName);
+      option.value = rawName;
+      option.textContent = getImportScopeLabel(parsed.owner) + ' / ' + parsed.topic;
+      if (selectedName ? rawName === selectedName : index === 0) option.selected = true;
+      select.appendChild(option);
+    });
+
+    select.disabled = false;
+    if (btn) btn.disabled = false;
+  }).catch(function() {
+    select.textContent = '';
+    var errorOption = document.createElement('option');
+    errorOption.value = '';
+    errorOption.textContent = 'Unable to load collections';
+    select.appendChild(errorOption);
+    select.disabled = true;
+    if (btn) btn.disabled = true;
+  });
 }
 
 function copyTextLegacy(text) {
@@ -2042,6 +2183,36 @@ function renderImportSuccess(result, queries) {
   host.appendChild(card);
 }
 
+function finalizeImport(result, queryTopic, selectedCollection) {
+  var targetCollection = selectedCollection || result.collection || '';
+  var queryName = queryTopic || getImportQueryTopic(targetCollection);
+  var seen = {};
+  var queries = [];
+
+  function addQueries(items) {
+    (items || []).forEach(function(query) {
+      if (!query || seen[query]) return;
+      seen[query] = true;
+      queries.push(query);
+    });
+  }
+
+  addQueries(result && result.suggested_queries);
+
+  return callApi('get_suggested_queries', queryName).then(function(qr) {
+    if (qr && qr.ok && qr.queries) addQueries(qr.queries);
+    renderImportSuccess(result, queries.slice(0, 4));
+    showToast((result && result.msg) || 'Import complete', 'ok');
+    loadCollections();
+    return refreshImportCollections(targetCollection);
+  }).catch(function() {
+    renderImportSuccess(result, queries.slice(0, 4));
+    showToast((result && result.msg) || 'Import complete', 'ok');
+    loadCollections();
+    return refreshImportCollections(targetCollection);
+  });
+}
+
 // Create collection
 document.getElementById('btnCreateToggle').addEventListener('click', function() {
   var form = document.getElementById('createForm');
@@ -2053,7 +2224,9 @@ document.getElementById('btnImportToggle').addEventListener('click', function() 
   var wizard = document.getElementById('importWizard');
   wizard.classList.toggle('visible');
   if (wizard.classList.contains('visible')) {
-    document.getElementById('importCollectionName').focus();
+    refreshImportCollections().finally(function() {
+      focusImportWizard();
+    });
   }
 });
 
@@ -2078,17 +2251,67 @@ document.getElementById('btnCreateCol').addEventListener('click', function() {
   });
 });
 
-document.getElementById('btnImportBrowse').addEventListener('click', function() {
+document.getElementById('btnImportModeExisting').addEventListener('click', function() {
+  setImportMode('existing');
+});
+
+document.getElementById('btnImportModeNew').addEventListener('click', function() {
+  setImportMode('new');
+});
+
+document.getElementById('btnImportExistingBrowse').addEventListener('click', function() {
   callApi('browse_directory').then(function(r) {
     if (r && r.ok && r.path) {
-      document.getElementById('importSourcePath').value = r.path;
+      document.getElementById('importExistingSourcePath').value = r.path;
     }
+  });
+});
+
+document.getElementById('btnImportNewBrowse').addEventListener('click', function() {
+  callApi('browse_directory').then(function(r) {
+    if (r && r.ok && r.path) {
+      document.getElementById('importNewSourcePath').value = r.path;
+      document.getElementById('importCollectionName').value = sanitizeImportCollectionName(r.path);
+    }
+  });
+});
+
+document.getElementById('btnRunAddToCollection').addEventListener('click', function() {
+  var btn = document.getElementById('btnRunAddToCollection');
+  var sourcePath = document.getElementById('importExistingSourcePath').value.trim();
+  var collectionName = document.getElementById('importExistingCollection').value.trim();
+
+  if (!collectionName) {
+    showToast('Choose a collection', 'err');
+    return;
+  }
+
+  if (!sourcePath) {
+    showToast('Choose a directory to import', 'err');
+    return;
+  }
+
+  clearImportSuccess();
+  btn.disabled = true;
+  btn.textContent = 'Importing...';
+
+  callApi('add_to_collection', sourcePath, collectionName).then(function(r) {
+    if (!r || !r.ok) {
+      showToast((r && r.msg) || 'Import failed', 'err');
+      return;
+    }
+    return finalizeImport(r, getImportQueryTopic(collectionName), collectionName);
+  }).catch(function(err) {
+    showToast(String(err), 'err');
+  }).finally(function() {
+    btn.disabled = false;
+    btn.textContent = 'Import';
   });
 });
 
 document.getElementById('btnRunImport').addEventListener('click', function() {
   var btn = document.getElementById('btnRunImport');
-  var sourcePath = document.getElementById('importSourcePath').value.trim();
+  var sourcePath = document.getElementById('importNewSourcePath').value.trim();
   var collectionName = document.getElementById('importCollectionName').value.trim();
   var scope = document.getElementById('importScope').value;
 
@@ -2111,35 +2334,12 @@ document.getElementById('btnRunImport').addEventListener('click', function() {
       showToast((r && r.msg) || 'Import failed', 'err');
       return;
     }
-
-    var seen = {};
-    var queries = [];
-
-    function addQueries(items) {
-      (items || []).forEach(function(query) {
-        if (!query || seen[query]) return;
-        seen[query] = true;
-        queries.push(query);
-      });
-    }
-
-    addQueries(r.suggested_queries);
-
-    callApi('get_suggested_queries', collectionName).then(function(qr) {
-      if (qr && qr.ok && qr.queries) addQueries(qr.queries);
-      renderImportSuccess(r, queries.slice(0, 4));
-      showToast(r.msg || 'Import complete', 'ok');
-      loadCollections();
-    }).catch(function() {
-      renderImportSuccess(r, queries.slice(0, 4));
-      showToast(r.msg || 'Import complete', 'ok');
-      loadCollections();
-    });
+    return finalizeImport(r, collectionName, r.collection || '');
   }).catch(function(err) {
     showToast(String(err), 'err');
   }).finally(function() {
     btn.disabled = false;
-    btn.textContent = 'Import';
+    btn.textContent = 'Create & Import';
   });
 });
 
@@ -2761,6 +2961,20 @@ document.getElementById('btnInstallAll').addEventListener('click', function() {
 
 function init() {
   initTabs();
+  // Load data for the default active tab
+  var activeTab = document.querySelector('.tab-btn.active');
+  var tab = activeTab ? activeTab.getAttribute('data-tab') : 'dashboard';
+  if (tab === 'dashboard') {
+    startDashRefresh();
+  } else if (tab === 'collections') {
+    loadCollections();
+    loadWorkspaces();
+  } else if (tab === 'settings') {
+    loadSettings();
+  } else if (tab === 'cli') {
+    loadCLIStatus();
+  }
+  // Always start dashboard refresh for background polling
   startDashRefresh();
 }
 

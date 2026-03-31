@@ -447,6 +447,36 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
+    def add_to_collection(self, source_path, collection_name):
+        """Add files from a directory to an existing collection."""
+        try:
+            import subprocess
+            files_added = 0
+            for fname in os.listdir(source_path):
+                fpath = os.path.join(source_path, fname)
+                if os.path.isfile(fpath) and fname.endswith(('.md', '.txt', '.json', '.jsonl')):
+                    files_added += 1
+
+            cmd = [sys.executable, "-m", "ember_memory.ingest", source_path, "--collection", collection_name]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=EMBER_ROOT)
+
+            from ember_memory.core.backends.loader import get_backend_v2
+            backend = get_backend_v2()
+            try:
+                count = backend.collection_count(collection_name)
+            except Exception:
+                count = "?"
+
+            return {
+                "ok": result.returncode == 0,
+                "msg": f"Added files to '{collection_name}' (now {count} chunks)",
+                "collection": collection_name,
+                "files": files_added,
+                "chunks": count,
+            }
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
     def import_knowledge(self, source_path, collection_name, scope="shared"):
         """Import files from a directory into a collection. The resurrection flow."""
         try:
