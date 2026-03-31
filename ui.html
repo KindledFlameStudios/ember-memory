@@ -252,6 +252,7 @@ html, body {
 /* Collections */
 .section-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--fg-muted); }
+.section-actions { display: flex; align-items: center; gap: 8px; }
 .col-list { display: flex; flex-direction: column; gap: 6px; }
 .col-item {
   display: flex; align-items: center; gap: 10px;
@@ -288,6 +289,24 @@ html, body {
 }
 .create-form.visible { display: block; }
 .form-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.import-wizard { background: var(--bg-raised); border-radius: 8px; padding: 16px; margin-bottom: 16px; border: 1px solid rgba(255,120,32,0.15); display: none; }
+.import-wizard.visible { display: block; }
+.import-wizard-title { font-size: 16px; font-weight: 600; color: var(--ember); margin-bottom: 4px; }
+.import-wizard-sub { font-size: 12px; color: var(--fg-muted); margin-bottom: 16px; }
+.import-step { margin-bottom: 12px; }
+.import-step-label { font-size: 11px; font-weight: 600; color: var(--fg-muted); text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.5px; }
+.import-success { background: rgba(255,120,32,0.08); border-radius: 8px; padding: 14px; margin-top: 12px; border-left: 3px solid var(--ember); }
+.import-success-stat { font-family: var(--font-mono); font-size: 13px; color: var(--fg); margin-bottom: 4px; }
+.import-query-btn { background: rgba(255,120,32,0.1); border: 1px solid rgba(255,120,32,0.3); color: var(--ember); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 11px; font-family: var(--font-mono); margin: 3px; display: inline-block; }
+.import-query-btn:hover { background: rgba(255,120,32,0.2); }
+.import-step-input { width: 100%; }
+.import-path-row { display: flex; align-items: center; gap: 8px; }
+.import-path-row input { flex: 1; }
+.import-action-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+.import-supported { font-size: 11px; color: var(--fg-muted); margin-top: 4px; }
+.import-success-title { font-size: 12px; font-weight: 700; color: var(--ember-glow); margin-bottom: 8px; }
+.import-query-row { margin-top: 8px; display: flex; flex-wrap: wrap; }
+.import-tip { font-size: 11px; color: var(--fg-muted); margin-top: 14px; line-height: 1.5; }
 
 /* CinderACE promo */
 .promo-card {
@@ -583,7 +602,10 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
 
       <div class="section-hdr">
         <span class="section-title">Collections</span>
-        <button class="btn btn-primary btn-sm" id="btnCreateToggle">+ New Collection</button>
+        <div class="section-actions">
+          <button class="btn btn-primary btn-sm" id="btnCreateToggle">+ New Collection</button>
+          <button class="btn btn-secondary btn-sm" id="btnImportToggle">Import Knowledge</button>
+        </div>
       </div>
 
       <!-- Quick launch moved to per-owner sections -->
@@ -600,6 +622,43 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
           <button class="btn btn-primary btn-sm" id="btnCreateCol">Create</button>
           <button class="btn btn-secondary btn-sm" id="btnCreateCancel">Cancel</button>
         </div>
+      </div>
+
+      <div class="import-wizard" id="importWizard">
+        <div class="import-wizard-title">Revive Your Context</div>
+        <div class="import-wizard-sub">Import old chats, notes, or docs — turn forgotten work into searchable memory</div>
+
+        <div class="import-step">
+          <div class="import-step-label">Step 1: What do you want to revive?</div>
+          <input type="text" id="importCollectionName" class="import-step-input" placeholder="project-name" />
+        </div>
+
+        <div class="import-step">
+          <div class="import-step-label">Step 2: Where is it?</div>
+          <div class="import-path-row">
+            <input type="text" id="importSourcePath" class="import-step-input" placeholder="/path/to/export-or-notes" />
+            <button class="btn btn-secondary btn-sm" id="btnImportBrowse">Browse</button>
+          </div>
+          <div class="import-supported">Supports `.md`, `.txt`, `.json`, and `.jsonl` files, including CinderACE export folders.</div>
+        </div>
+
+        <div class="import-step">
+          <div class="import-step-label">Step 3: Who should see it?</div>
+          <select id="importScope">
+            <option value="shared">shared</option>
+            <option value="claude">claude</option>
+            <option value="gemini">gemini</option>
+            <option value="codex">codex</option>
+          </select>
+        </div>
+
+        <div class="import-action-row">
+          <button class="btn btn-primary" id="btnRunImport">Import</button>
+        </div>
+
+        <div id="importSuccessHost"></div>
+
+        <div class="import-tip">Tip: Export AI chats with CinderACE, then import them here to revive old conversations.</div>
       </div>
 
       <div class="col-list" id="colList">
@@ -1893,11 +1952,97 @@ function buildEmptyState(msg) {
   return d;
 }
 
+function clearImportSuccess() {
+  var host = document.getElementById('importSuccessHost');
+  if (!host) return;
+  host.textContent = '';
+}
+
+function copyTextLegacy(text) {
+  return new Promise(function(resolve, reject) {
+    var area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', 'readonly');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    area.style.pointerEvents = 'none';
+    document.body.appendChild(area);
+    area.focus();
+    area.select();
+    try {
+      var copied = document.execCommand('copy');
+      document.body.removeChild(area);
+      if (copied) resolve();
+      else reject(new Error('Copy failed'));
+    } catch (err) {
+      document.body.removeChild(area);
+      reject(err);
+    }
+  });
+}
+
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text).catch(function() {
+      return copyTextLegacy(text);
+    });
+  }
+  return copyTextLegacy(text);
+}
+
+function buildImportQueryButton(query) {
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'import-query-btn';
+  btn.textContent = query;
+  btn.addEventListener('click', function() {
+    copyText(query).then(function() {
+      showToast('Copied — paste into your CLI', 'ok');
+    }).catch(function() {
+      showToast('Copy failed', 'err');
+    });
+  });
+  return btn;
+}
+
+function renderImportSuccess(result, queries) {
+  var host = document.getElementById('importSuccessHost');
+  if (!host) return;
+  host.textContent = '';
+
+  var card = document.createElement('div');
+  card.className = 'import-success';
+  card.appendChild(el('div', 'import-success-title', 'Resurrection complete'));
+  card.appendChild(el('div', 'import-success-stat', 'Files imported: ' + String(result.files != null ? result.files : 0)));
+  card.appendChild(el('div', 'import-success-stat', 'Chunks created: ' + String(result.chunks != null ? result.chunks : '?')));
+  card.appendChild(el('div', 'import-success-stat', 'Collection: ' + String(result.collection || 'unknown')));
+
+  if (queries && queries.length > 0) {
+    card.appendChild(el('div', 'import-step-label', 'Suggested first queries'));
+    var row = document.createElement('div');
+    row.className = 'import-query-row';
+    queries.forEach(function(query) {
+      row.appendChild(buildImportQueryButton(query));
+    });
+    card.appendChild(row);
+  }
+
+  host.appendChild(card);
+}
+
 // Create collection
 document.getElementById('btnCreateToggle').addEventListener('click', function() {
   var form = document.getElementById('createForm');
   form.classList.toggle('visible');
   if (form.classList.contains('visible')) document.getElementById('newColName').focus();
+});
+
+document.getElementById('btnImportToggle').addEventListener('click', function() {
+  var wizard = document.getElementById('importWizard');
+  wizard.classList.toggle('visible');
+  if (wizard.classList.contains('visible')) {
+    document.getElementById('importCollectionName').focus();
+  }
 });
 
 document.getElementById('btnCreateCancel').addEventListener('click', function() {
@@ -1918,6 +2063,71 @@ document.getElementById('btnCreateCol').addEventListener('click', function() {
     } else {
       showToast((r && r.msg) || 'Create failed', 'err');
     }
+  });
+});
+
+document.getElementById('btnImportBrowse').addEventListener('click', function() {
+  callApi('browse_directory').then(function(r) {
+    if (r && r.ok && r.path) {
+      document.getElementById('importSourcePath').value = r.path;
+    }
+  });
+});
+
+document.getElementById('btnRunImport').addEventListener('click', function() {
+  var btn = document.getElementById('btnRunImport');
+  var sourcePath = document.getElementById('importSourcePath').value.trim();
+  var collectionName = document.getElementById('importCollectionName').value.trim();
+  var scope = document.getElementById('importScope').value;
+
+  if (!collectionName) {
+    showToast('Enter a collection name', 'err');
+    return;
+  }
+
+  if (!sourcePath) {
+    showToast('Choose a directory to import', 'err');
+    return;
+  }
+
+  clearImportSuccess();
+  btn.disabled = true;
+  btn.textContent = 'Importing...';
+
+  callApi('import_knowledge', sourcePath, collectionName, scope).then(function(r) {
+    if (!r || !r.ok) {
+      showToast((r && r.msg) || 'Import failed', 'err');
+      return;
+    }
+
+    var seen = {};
+    var queries = [];
+
+    function addQueries(items) {
+      (items || []).forEach(function(query) {
+        if (!query || seen[query]) return;
+        seen[query] = true;
+        queries.push(query);
+      });
+    }
+
+    addQueries(r.suggested_queries);
+
+    callApi('get_suggested_queries', collectionName).then(function(qr) {
+      if (qr && qr.ok && qr.queries) addQueries(qr.queries);
+      renderImportSuccess(r, queries.slice(0, 4));
+      showToast(r.msg || 'Import complete', 'ok');
+      loadCollections();
+    }).catch(function() {
+      renderImportSuccess(r, queries.slice(0, 4));
+      showToast(r.msg || 'Import complete', 'ok');
+      loadCollections();
+    });
+  }).catch(function(err) {
+    showToast(String(err), 'err');
+  }).finally(function() {
+    btn.disabled = false;
+    btn.textContent = 'Import';
   });
 });
 

@@ -446,6 +446,79 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
+    def import_knowledge(self, source_path, collection_name, scope="shared"):
+        """Import files from a directory into a collection. The resurrection flow."""
+        try:
+            import subprocess
+            from ember_memory.core.namespaces import resolve_collection_name
+            from ember_memory.core.embeddings.loader import get_embedding_provider
+            from ember_memory.core.backends.loader import get_backend_v2
+
+            full_name = resolve_collection_name(collection_name, scope)
+            embedder = get_embedding_provider()
+            backend = get_backend_v2()
+            dim = embedder.dimension()
+
+            # Create collection if needed
+            try:
+                backend.create_collection(full_name, dimension=dim)
+            except Exception:
+                pass
+
+            # Copy files to sources directory for future re-ingest
+            import shutil
+            sources_dir = os.path.join(
+                load_config().get("data_dir", DEFAULT_DATA_DIR),
+                "sources",
+                scope,
+                collection_name,
+            )
+            os.makedirs(sources_dir, exist_ok=True)
+
+            files_copied = 0
+            for fname in os.listdir(source_path):
+                fpath = os.path.join(source_path, fname)
+                if os.path.isfile(fpath) and fname.endswith(('.md', '.txt', '.json', '.jsonl')):
+                    shutil.copy2(fpath, sources_dir)
+                    files_copied += 1
+
+            # Run ingest
+            cmd = [sys.executable, "-m", "ember_memory.ingest", sources_dir, "--collection", full_name]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=EMBER_ROOT)
+
+            # Get final count
+            try:
+                col_count = backend.collection_count(full_name)
+            except Exception:
+                col_count = "?"
+
+            return {
+                "ok": result.returncode == 0,
+                "msg": f"Imported {files_copied} files into '{full_name}' ({col_count} chunks created)",
+                "files": files_copied,
+                "collection": full_name,
+                "chunks": col_count,
+                "suggested_queries": [
+                    f"What do we know about {collection_name}?",
+                    f"What decisions were made in {collection_name}?",
+                    f"Summarize the key points from {collection_name}",
+                ]
+            }
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def get_suggested_queries(self, collection_name):
+        """Get suggested first queries for a collection after import."""
+        return {
+            "ok": True,
+            "queries": [
+                f"What do we know about {collection_name}?",
+                f"What decisions were made regarding {collection_name}?",
+                f"What are the key themes in {collection_name}?",
+                f"What changed over time in {collection_name}?",
+            ]
+        }
+
     def delete_collection(self, name):
         cfg = load_config()
         try:
