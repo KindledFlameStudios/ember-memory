@@ -151,6 +151,21 @@ html, body {
 .panel-body { padding: 14px; }
 
 /* Heat map */
+.hot-now-list { display: flex; flex-direction: column; }
+.hot-now-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 4px; margin-bottom: 3px; }
+.hot-now-item:hover { background: rgba(255,120,32,0.06); }
+.hot-now-collection {
+  font-family: var(--font-mono); font-size: 10px; color: var(--ember); width: 100px;
+  flex-shrink: 0; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hot-now-preview {
+  font-size: 11px; color: var(--fg); flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hot-now-heat {
+  font-family: var(--font-mono); font-size: 10px; background: rgba(255,120,32,0.15);
+  color: var(--ember); padding: 1px 6px; border-radius: 8px; flex-shrink: 0;
+}
 .heat-map-area { min-height: 180px; display: flex; flex-direction: column; gap: 4px; }
 .heat-bar-row { display: flex; align-items: center; gap: 8px; height: 20px; cursor: pointer; }
 .heat-bar-row:hover { background: rgba(255,120,32,0.06); border-radius: 4px; }
@@ -308,6 +323,14 @@ html, body {
 .import-file-remove:hover { color: var(--error); }
 .import-dest-new { margin-top: 8px; padding: 8px; background: rgba(255,120,32,0.05); border-radius: 6px; }
 .import-pick-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.import-query-prompt { font-size: 11px; color: var(--fg-dim); margin-top: 12px; margin-bottom: 8px; line-height: 1.5; }
+.import-query-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.import-query-btn {
+  background: rgba(255,120,32,0.08); border: 1px solid rgba(255,120,32,0.18); border-radius: 999px;
+  color: var(--fg); cursor: pointer; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.4;
+  padding: 6px 10px; text-align: left; transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.import-query-btn:hover { background: rgba(255,120,32,0.14); border-color: rgba(255,120,32,0.28); color: var(--ember-glow); }
 
 /* CinderACE promo */
 .promo-card {
@@ -510,6 +533,19 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
     <!-- ═══════════ DASHBOARD ═══════════ -->
     <div class="tab-panel active" id="tab-dashboard">
 
+      <div class="panel" style="margin-bottom:12px;">
+        <div class="panel-hdr">
+          <div class="panel-hdr-title">Test Query</div>
+        </div>
+        <div class="panel-body" style="padding:10px 14px;">
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="testQueryInput" class="fluid" placeholder="Ask ember-memory anything..." style="font-family:var(--font-mono); font-size:12px;" />
+            <button class="btn btn-primary btn-sm" id="btnTestQuery">Search</button>
+          </div>
+          <div id="testQueryResults" style="margin-top:8px;"></div>
+        </div>
+      </div>
+
       <div class="stat-row">
         <div class="stat-card">
           <div class="stat-label">Memories Tracked</div>
@@ -534,6 +570,16 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
         <div class="stat-card clickable" id="resetEngineCard" title="Reset all Engine state" style="border-color: #662222;">
           <div class="stat-label">Engine</div>
           <div class="stat-value" style="font-size:12px; color:#ff6666;">RESET</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-hdr">
+          <div class="panel-hdr-title">Hot Right Now</div>
+          <span class="refresh-badge" id="hotNowRefreshTime"></span>
+        </div>
+        <div class="panel-body" id="hotNowArea">
+          <div class="loading-text"><div class="spinner"></div> Loading hot memories...</div>
         </div>
       </div>
 
@@ -939,6 +985,34 @@ function setTextById(id, text) {
   if (e) e.textContent = String(text);
 }
 
+function copyTextToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+
+  return new Promise(function(resolve, reject) {
+    var area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', 'readonly');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    area.style.pointerEvents = 'none';
+    document.body.appendChild(area);
+    area.focus();
+    area.select();
+
+    try {
+      var ok = document.execCommand('copy');
+      document.body.removeChild(area);
+      if (ok) resolve();
+      else reject(new Error('Clipboard copy failed'));
+    } catch (err) {
+      document.body.removeChild(area);
+      reject(err);
+    }
+  });
+}
+
 // ── Tab switching ─────────────────────────────────────
 function initTabs() {
   document.querySelectorAll('.tab-btn').forEach(function(btn) {
@@ -981,6 +1055,200 @@ function setEngineAlive(alive) {
   setTextById('enginePillLabel', alive ? 'Engine Live' : 'Engine');
 }
 
+// Test Query
+document.getElementById('btnTestQuery').addEventListener('click', function() {
+  var input = document.getElementById('testQueryInput');
+  var area = document.getElementById('testQueryResults');
+  var query = input ? input.value.trim() : '';
+  if (!query) return;
+
+  area.textContent = '';
+  var loading = document.createElement('div');
+  loading.className = 'loading-text';
+  var spin = document.createElement('div');
+  spin.className = 'spinner';
+  loading.appendChild(spin);
+  loading.appendChild(el('span', null, ' Searching...'));
+  area.appendChild(loading);
+
+  callApi('test_query', query).then(function(r) {
+    area.textContent = '';
+    if (!r || !r.ok || !r.results || r.results.length === 0) {
+      var empty = el('div', 'empty-state', 'No results found');
+      empty.style.fontSize = '12px';
+      empty.style.padding = '8px';
+      area.appendChild(empty);
+      return;
+    }
+
+    var header = document.createElement('div');
+    header.style.cssText = 'font-size:10px; color:var(--fg-muted); margin-bottom:6px; font-family:var(--font-mono);';
+    header.textContent = r.results.length + ' results in ' + (r.elapsed_ms || '?') + 'ms';
+    area.appendChild(header);
+
+    r.results.forEach(function(result) {
+      var card = document.createElement('div');
+      card.className = 'retrieval-result';
+
+      var hdr = document.createElement('div');
+      hdr.className = 'retrieval-result-hdr';
+      var colName = document.createElement('span');
+      colName.className = 'retrieval-result-collection';
+      colName.textContent = result.collection;
+      hdr.appendChild(colName);
+      var scoreText = document.createElement('span');
+      scoreText.className = 'retrieval-result-score';
+      var simPct = Math.round((result.similarity || 0) * 100);
+      var compPct = Math.round((result.composite_score || 0) * 100);
+      scoreText.textContent = simPct + '% sim \u2022 ' + compPct + '% composite';
+      hdr.appendChild(scoreText);
+      card.appendChild(hdr);
+
+      var content = document.createElement('div');
+      content.className = 'retrieval-result-content';
+      content.style.maxHeight = '100px';
+      content.style.overflow = 'auto';
+      content.textContent = result.content || '(empty)';
+      card.appendChild(content);
+
+      // X-Ray bar if breakdown available
+      if (result.score_breakdown) {
+        var bd = result.score_breakdown;
+        var xbar = document.createElement('div');
+        xbar.className = 'xray-bar';
+        var total = (bd.composite_score || 0.01);
+        var factors = [
+          { cls: 'xray-seg-sim', val: (bd.similarity || 0) * 0.40 },
+          { cls: 'xray-seg-heat', val: (bd.heat_boost || 0) * 0.25 },
+          { cls: 'xray-seg-conn', val: (bd.connection_bonus || 0) * 0.20 },
+          { cls: 'xray-seg-decay', val: (bd.decay_factor || 0) * 0.15 },
+        ];
+        factors.forEach(function(f) {
+          var seg = document.createElement('div');
+          seg.className = 'xray-seg ' + f.cls;
+          seg.style.width = Math.max(2, Math.round(f.val / total * 100)) + '%';
+          xbar.appendChild(seg);
+        });
+        card.appendChild(xbar);
+
+        var legend = document.createElement('div');
+        legend.className = 'xray-legend';
+        var labels = [
+          { color: '#6699cc', name: 'Sim', val: bd.similarity },
+          { color: '#FF7820', name: 'Heat', val: bd.heat_boost },
+          { color: '#10a37f', name: 'Conn', val: bd.connection_bonus },
+          { color: '#888', name: 'Decay', val: bd.decay_factor },
+        ];
+        labels.forEach(function(l) {
+          var item = document.createElement('span');
+          var dot = document.createElement('span');
+          dot.className = 'xray-legend-dot';
+          dot.style.background = l.color;
+          item.appendChild(dot);
+          var txt = document.createTextNode(l.name + ': ' + Math.round((l.val || 0) * 100) + '%');
+          item.appendChild(txt);
+          legend.appendChild(item);
+        });
+        card.appendChild(legend);
+      }
+
+      area.appendChild(card);
+    });
+  });
+});
+
+document.getElementById('testQueryInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') document.getElementById('btnTestQuery').click();
+});
+
+function getCollectionDisplayName(collectionName) {
+  var rawName = String(collectionName || '').trim();
+  if (!rawName) return 'unknown';
+  var parsed = parseOwner(rawName);
+  return parsed.topic || rawName;
+}
+
+function getCollectionAccentColor(collectionName) {
+  var owner = parseOwner(String(collectionName || '')).owner;
+  if (owner === 'gemini') return '#4285f4';
+  if (owner === 'codex') return '#10a37f';
+  return 'var(--ember)';
+}
+
+function getHotNowPreview(meta, memoryId) {
+  var preview = meta && meta.preview ? String(meta.preview) : '';
+  preview = preview.replace(/\s+/g, ' ').trim();
+  if (!preview) {
+    var shortId = String(memoryId || '').trim();
+    return shortId ? ('Memory ' + shortId.slice(0, 12)) : 'Memory preview unavailable';
+  }
+  if (preview.length > 60) return preview.slice(0, 60) + '\u2026';
+  return preview;
+}
+
+function buildHotNowItem(memoryId, heat, meta) {
+  var item = document.createElement('div');
+  item.className = 'hot-now-item';
+  item.title = (meta && meta.collection ? String(meta.collection) : 'unknown') + ' | ' + getHotNowPreview(meta, memoryId);
+
+  var collection = document.createElement('div');
+  collection.className = 'hot-now-collection';
+  collection.textContent = getCollectionDisplayName(meta && meta.collection);
+  collection.style.color = getCollectionAccentColor(meta && meta.collection);
+
+  var preview = document.createElement('div');
+  preview.className = 'hot-now-preview';
+  preview.textContent = getHotNowPreview(meta, memoryId);
+
+  var heatBadge = document.createElement('div');
+  heatBadge.className = 'hot-now-heat';
+  heatBadge.textContent = safeNum(heat, 0).toFixed(1);
+
+  item.appendChild(collection);
+  item.appendChild(preview);
+  item.appendChild(heatBadge);
+  return item;
+}
+
+function loadHotNow() {
+  var area = document.getElementById('hotNowArea');
+  if (!area) return;
+
+  setTextById('hotNowRefreshTime', nowStr());
+  callApi('get_heat_map').then(function(r) {
+    if (!area) return;
+
+    area.textContent = '';
+    if (!r || !r.ok || !r.heat || Object.keys(r.heat).length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.appendChild(el('span', null, 'The Engine is still learning your patterns'));
+      area.appendChild(empty);
+      return;
+    }
+
+    var meta = r.meta || {};
+    var entries = Object.entries(r.heat)
+      .sort(function(a, b) { return safeNum(b[1], 0) - safeNum(a[1], 0); })
+      .slice(0, 5);
+
+    if (!entries.length) {
+      var none = document.createElement('div');
+      none.className = 'empty-state';
+      none.appendChild(el('span', null, 'The Engine is still learning your patterns'));
+      area.appendChild(none);
+      return;
+    }
+
+    var list = document.createElement('div');
+    list.className = 'hot-now-list';
+    entries.forEach(function(entry) {
+      list.appendChild(buildHotNowItem(entry[0], entry[1], meta[entry[0]] || {}));
+    });
+    area.appendChild(list);
+  });
+}
+
 function loadDashboard() {
   callApi('get_engine_stats').then(function(r) {
     if (!r || !r.ok) { setEngineAlive(false); return; }
@@ -1006,6 +1274,7 @@ function loadDashboard() {
     setTextById('heatRefreshTime', nowStr());
   });
 
+  loadHotNow();
   loadHeatMap();
   loadLastRetrieval();
   loadActivityFeed();
@@ -2238,6 +2507,30 @@ function readImportDestination() {
   };
 }
 
+function buildImportQueryList(collectionName) {
+  return [
+    'What do we know about ' + collectionName + '?',
+    'What decisions were made in ' + collectionName + '?',
+    'Summarize the key themes in ' + collectionName,
+    'What changed over time in ' + collectionName + '?'
+  ];
+}
+
+function buildImportQueryButton(query) {
+  var button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'import-query-btn';
+  button.textContent = query;
+  button.addEventListener('click', function() {
+    copyTextToClipboard(query).then(function() {
+      showToast('Copied — paste into your CLI', 'ok');
+    }).catch(function() {
+      showToast('Unable to copy query', 'err');
+    });
+  });
+  return button;
+}
+
 function renderImportSuccess(result) {
   var host = document.getElementById('importSuccessHost');
   if (!host) return;
@@ -2266,6 +2559,20 @@ function renderImportSuccess(result) {
   card.appendChild(files);
   card.appendChild(chunks);
   card.appendChild(collection);
+
+  var prompt = document.createElement('div');
+  prompt.className = 'import-query-prompt';
+  prompt.textContent = 'Try one of these in your CLI to see your imported knowledge in action:';
+  card.appendChild(prompt);
+
+  var queries = document.createElement('div');
+  queries.className = 'import-query-list';
+  var queryCollection = getCollectionDisplayName(result.collection || '');
+  buildImportQueryList(queryCollection).forEach(function(query) {
+    queries.appendChild(buildImportQueryButton(query));
+  });
+  card.appendChild(queries);
+
   host.appendChild(card);
 }
 
@@ -2292,7 +2599,7 @@ document.getElementById('btnImportToggle').addEventListener('click', function() 
     refreshImportCollections().finally(function() {
       focusImportWizard();
     });
-  });
+  }
 });
 
 document.getElementById('btnCreateCancel').addEventListener('click', function() {
@@ -3010,8 +3317,6 @@ function init() {
   } else if (tab === 'cli') {
     loadCLIStatus();
   }
-  // Always start dashboard refresh for background polling
-  startDashRefresh();
 }
 
 if (window.pywebview && window.pywebview.api) {
