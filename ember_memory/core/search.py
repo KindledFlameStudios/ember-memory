@@ -78,6 +78,7 @@ class RetrievalResult:
     similarity: float
     composite_score: float  # = similarity for now; Engine overrides in Plan 3
     metadata: dict = field(default_factory=dict)
+    score_breakdown: dict = field(default_factory=dict)
 
 
 def retrieve(
@@ -223,6 +224,13 @@ def retrieve(
                         connection_bonus=connection_bonus,
                         decay_factor=decay_factor,
                     )
+                    result.score_breakdown = {
+                        "similarity": round(result.similarity, 4),
+                        "heat_boost": round(heat_boost, 4),
+                        "connection_bonus": round(connection_bonus, 4),
+                        "decay_factor": round(decay_factor, 4),
+                        "composite_score": round(result.composite_score, 4),
+                    }
             except Exception as e:
                 logger.warning(f"Engine scoring failed, keeping similarity scores: {e}")
                 # Already defaulted to similarity — nothing to reset

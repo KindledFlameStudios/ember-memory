@@ -77,6 +77,7 @@ def write_activity(prompt_preview, results, elapsed_ms):
                 "content": r.content,
                 "similarity": round(r.similarity, 4),
                 "composite_score": round(r.composite_score, 4),
+                "score_breakdown": r.score_breakdown,
                 "id": r.id[:32],
             }
             for r in results

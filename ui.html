@@ -210,6 +210,14 @@ html, body {
   font-family: var(--font-mono); font-size: 11px; color: var(--fg);
   white-space: pre-wrap; word-break: break-word; line-height: 1.5;
 }
+.xray-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 6px; gap: 1px; }
+.xray-seg { height: 100%; min-width: 2px; transition: width 0.3s; }
+.xray-seg-sim { background: #6699cc; }
+.xray-seg-heat { background: #FF7820; }
+.xray-seg-conn { background: #10a37f; }
+.xray-seg-decay { background: #888; }
+.xray-legend { display: flex; gap: 10px; margin-top: 4px; font-size: 9px; font-family: var(--font-mono); color: var(--fg-muted); }
+.xray-legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 3px; vertical-align: middle; }
 .retrieval-meta-bar {
   display: flex; gap: 12px; margin-top: 8px; padding-top: 6px;
   font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
@@ -578,10 +586,7 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
         <button class="btn btn-primary btn-sm" id="btnCreateToggle">+ New Collection</button>
       </div>
 
-      <div class="card quick-launch-card" id="collectionsQuickLaunchPanel" style="display:none;">
-        <div class="section-title" style="margin-bottom:8px;">Quick Launch</div>
-        <div class="quick-launch-row" id="collectionsQuickLaunch"></div>
-      </div>
+      <!-- Quick launch moved to per-owner sections -->
 
       <div class="create-form" id="createForm">
         <div class="form-row">
@@ -1105,6 +1110,60 @@ function loadLastRetrieval() {
       content.className = 'retrieval-result-content';
       content.textContent = result.content || '(empty)';
       card.appendChild(content);
+
+      var breakdown = result.score_breakdown || {};
+      var similarity = safeNum(breakdown.similarity, safeNum(result.similarity, 0));
+      var heatBoost = safeNum(breakdown.heat_boost, 0);
+      var connectionBonus = safeNum(breakdown.connection_bonus, 0);
+      var decayFactor = safeNum(breakdown.decay_factor, 0);
+      var compositeScore = safeNum(breakdown.composite_score, safeNum(result.composite_score, 0));
+
+      var weightedSimilarity = similarity * 0.40;
+      var weightedHeat = heatBoost * 0.25;
+      var weightedConnection = connectionBonus * 0.20;
+      var weightedDecay = decayFactor * 0.15;
+      var totalWeighted = weightedSimilarity + weightedHeat + weightedConnection + weightedDecay;
+      var scoreBase = compositeScore > 0 ? compositeScore : totalWeighted;
+
+      var xrayBar = document.createElement('div');
+      xrayBar.className = 'xray-bar';
+
+      [
+        { cls: 'xray-seg-sim', title: 'Similarity', value: weightedSimilarity },
+        { cls: 'xray-seg-heat', title: 'Heat', value: weightedHeat },
+        { cls: 'xray-seg-conn', title: 'Connection', value: weightedConnection },
+        { cls: 'xray-seg-decay', title: 'Decay', value: weightedDecay }
+      ].forEach(function(part) {
+        var seg = document.createElement('div');
+        var pct = scoreBase > 0 ? (part.value / scoreBase) * 100 : 0;
+        seg.className = 'xray-seg ' + part.cls;
+        seg.style.width = pct.toFixed(2) + '%';
+        seg.title = part.title + ': ' + Math.round(pct) + '%';
+        xrayBar.appendChild(seg);
+      });
+      card.appendChild(xrayBar);
+
+      var xrayLegend = document.createElement('div');
+      xrayLegend.className = 'xray-legend';
+
+      [
+        { label: 'Similarity', color: '#6699cc', value: weightedSimilarity },
+        { label: 'Heat', color: '#FF7820', value: weightedHeat },
+        { label: 'Connection', color: '#10a37f', value: weightedConnection },
+        { label: 'Decay', color: '#888', value: weightedDecay }
+      ].forEach(function(part) {
+        var item = document.createElement('span');
+        var dot = document.createElement('span');
+        var label = document.createElement('span');
+        var pct = scoreBase > 0 ? (part.value / scoreBase) * 100 : 0;
+        dot.className = 'xray-legend-dot';
+        dot.style.background = part.color;
+        label.textContent = part.label + ': ' + Math.round(pct) + '%';
+        item.appendChild(dot);
+        item.appendChild(label);
+        xrayLegend.appendChild(item);
+      });
+      card.appendChild(xrayLegend);
 
       area.appendChild(card);
     });
@@ -1677,14 +1736,91 @@ function buildOwnerSection(ownerKey, collections, labels, disabledMap) {
   section.style.marginBottom = '16px';
 
   var header = document.createElement('div');
-  header.style.cssText = 'font-size:13px; font-weight:600; color:var(--ember); margin-bottom:8px; padding:6px 10px; background:rgba(255,120,32,0.08); border-radius:6px; border-left:3px solid var(--ember); display:flex; justify-content:space-between; align-items:center;';
+  header.style.cssText = 'font-size:13px; font-weight:600; color:var(--ember); margin-bottom:8px; padding:6px 10px; background:rgba(255,120,32,0.08); border-radius:6px; border-left:3px solid var(--ember);';
+
+  var headerTop = document.createElement('div');
+  headerTop.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
   var label = document.createElement('span');
   label.textContent = ownerLabels[ownerKey] || ownerKey;
-  header.appendChild(label);
+  headerTop.appendChild(label);
+
+  // Right side: count + master toggle
+  var rightSide = document.createElement('div');
+  rightSide.style.cssText = 'display:flex; align-items:center; gap:10px;';
   var count = document.createElement('span');
   count.style.cssText = 'font-size:11px; color:var(--fg-muted); font-weight:400;';
-  count.textContent = collections.length + ' collection' + (collections.length !== 1 ? 's' : '');
-  header.appendChild(count);
+  var totalChunks = collections.reduce(function(sum, c) { return sum + (c.count || 0); }, 0);
+  count.textContent = collections.length + (collections.length !== 1 ? ' topics' : ' topic') + ' \u2022 ' + totalChunks + ' chunks';
+  rightSide.appendChild(count);
+
+  // Master enable/disable toggle for entire section
+  var masterToggle = document.createElement('label');
+  masterToggle.className = 'toggle-switch';
+  masterToggle.title = 'Enable/disable all in this section';
+  var masterCheck = document.createElement('input');
+  masterCheck.type = 'checkbox';
+  // Check if ANY collection in this section is enabled
+  var anyEnabled = collections.some(function(c) { return !(disabledMap && disabledMap[c.name]); });
+  masterCheck.checked = anyEnabled;
+  var masterSlider = document.createElement('span');
+  masterSlider.className = 'toggle-slider';
+  masterToggle.appendChild(masterCheck);
+  masterToggle.appendChild(masterSlider);
+  rightSide.appendChild(masterToggle);
+
+  masterCheck.addEventListener('change', function() {
+    var enable = masterCheck.checked;
+    // Toggle all collections in this section
+    var promises = collections.map(function(c) {
+      var isDisabled = disabledMap && disabledMap[c.name];
+      // Only toggle if state needs to change
+      if (enable && isDisabled) return callApi('toggle_collection', c.name);
+      if (!enable && !isDisabled) return callApi('toggle_collection', c.name);
+      return Promise.resolve();
+    });
+    Promise.all(promises).then(function() {
+      var state = enable ? 'Enabled' : 'Disabled';
+      showToast(state + ' all in ' + (ownerLabels[ownerKey] || ownerKey), 'ok');
+      loadCollections();
+    });
+  });
+
+  headerTop.appendChild(rightSide);
+  header.appendChild(headerTop);
+
+  // Per-section launch buttons
+  var launchRow = document.createElement('div');
+  launchRow.style.cssText = 'display:flex; gap:6px; margin-top:6px;';
+
+  var colNames = collections.map(function(c) { return c.name; });
+
+  [
+    { cli: 'claude', label: 'Launch Claude', cls: 'btn-launch btn-launch-claude' },
+    { cli: 'gemini', label: 'Launch Gemini', cls: 'btn-launch btn-launch-gemini' },
+    { cli: 'codex', label: 'Launch Codex', cls: 'btn-launch btn-launch-codex' },
+  ].forEach(function(def) {
+    var btn = document.createElement('button');
+    btn.className = def.cls;
+    btn.textContent = def.label;
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      // Create a temporary workspace from this section's enabled collections
+      var enabledCols = {};
+      colNames.forEach(function(name) {
+        enabledCols[name] = !(disabledMap && disabledMap[name]);
+      });
+      var wsName = '_quick_' + ownerKey;
+      callApi('save_workspace', wsName, ownerKey, enabledCols).then(function() {
+        callApi('launch_cli', def.cli, wsName).then(function(r) {
+          if (r && r.ok) showToast(r.msg, 'ok');
+          else showToast((r && r.msg) || 'Launch failed', 'err');
+        });
+      });
+    });
+    launchRow.appendChild(btn);
+  });
+
+  header.appendChild(launchRow);
   section.appendChild(header);
 
   collections.forEach(function(col) {
