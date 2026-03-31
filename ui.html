@@ -335,12 +335,22 @@ html, body {
 .workspace-col-chip.active { background: rgba(255,120,32,0.2); border-color: var(--ember); color: var(--ember); }
 .workspace-col-chip.inactive { background: transparent; color: var(--fg-muted); opacity: 0.5; }
 .workspace-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.workspace-launch { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); flex-wrap: wrap; }
 .workspace-help { font-size: 11px; color: var(--fg-muted); margin-top: 8px; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 4px; font-family: var(--font-mono); }
 .workspace-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .workspace-summary { font-size: 11px; color: var(--fg-muted); }
 .workspace-name-hint { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); margin-bottom: 8px; }
 .workspace-label-input { width: 100%; margin-bottom: 10px; }
 .workspace-empty { margin-bottom: 10px; }
+.quick-launch-card { margin-bottom: 12px; }
+.quick-launch-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn-launch { padding: 4px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 11px; font-family: var(--font-mono); }
+.btn-launch-claude { background: rgba(255,120,32,0.2); color: #FF7820; }
+.btn-launch-claude:hover { background: rgba(255,120,32,0.35); }
+.btn-launch-gemini { background: rgba(66,133,244,0.2); color: #4285f4; }
+.btn-launch-gemini:hover { background: rgba(66,133,244,0.35); }
+.btn-launch-codex { background: rgba(16,163,127,0.2); color: #10a37f; }
+.btn-launch-codex:hover { background: rgba(16,163,127,0.35); }
 
 /* CLI cards */
 .cli-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 14px; }
@@ -566,6 +576,11 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
       <div class="section-hdr">
         <span class="section-title">Collections</span>
         <button class="btn btn-primary btn-sm" id="btnCreateToggle">+ New Collection</button>
+      </div>
+
+      <div class="card quick-launch-card" id="collectionsQuickLaunchPanel" style="display:none;">
+        <div class="section-title" style="margin-bottom:8px;">Quick Launch</div>
+        <div class="quick-launch-row" id="collectionsQuickLaunch"></div>
       </div>
 
       <div class="create-form" id="createForm">
@@ -1608,6 +1623,47 @@ var ownerLabels = {
   'codex': "Solace's Collections",
   'shared': "Shared Collections",
 };
+var detectedCLIs = {};
+
+function setDetectedCLIs(clis) {
+  detectedCLIs = clis || {};
+}
+
+function getInstalledCLIDefs() {
+  return CLI_DEFS.filter(function(def) {
+    return !!(detectedCLIs[def.id] && detectedCLIs[def.id].installed);
+  });
+}
+
+function buildLaunchButton(def, workspaceName) {
+  var button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn-launch btn-launch-' + def.id;
+  button.textContent = 'Launch ' + def.launchLabel;
+  button.addEventListener('click', function() {
+    callApi('launch_cli', def.id, workspaceName || '').then(function(r) {
+      if (r && r.ok) {
+        showToast((r && r.msg) || ('Launched ' + def.launchLabel), 'ok');
+      } else {
+        showToast((r && r.msg) || ('Failed to launch ' + def.launchLabel), 'err');
+      }
+    });
+  });
+  return button;
+}
+
+function renderCollectionsQuickLaunch() {
+  var panel = document.getElementById('collectionsQuickLaunchPanel');
+  var row = document.getElementById('collectionsQuickLaunch');
+  if (!panel || !row) return;
+
+  row.textContent = '';
+  var installed = getInstalledCLIDefs();
+  panel.style.display = installed.length ? '' : 'none';
+  installed.forEach(function(def) {
+    row.appendChild(buildLaunchButton(def, ''));
+  });
+}
 
 function parseOwner(colName) {
   if (colName.indexOf('claude--') === 0) return { owner: 'claude', topic: colName.substring(8) };
@@ -1652,13 +1708,17 @@ function loadCollections() {
   Promise.all([
     callApi('get_collections'),
     callApi('get_collection_labels'),
-    callApi('get_collection_states')
+    callApi('get_collection_states'),
+    callApi('detect_clis')
   ]).then(function(results) {
     var r = results[0];
     var labelsRes = results[1];
     var statesRes = results[2];
+    var cliRes = results[3];
     var labels = labelsRes && labelsRes.ok && labelsRes.labels ? labelsRes.labels : {};
     var disabledMap = statesRes && statesRes.ok && statesRes.disabled ? statesRes.disabled : {};
+    setDetectedCLIs(cliRes && cliRes.ok && cliRes.clis ? cliRes.clis : {});
+    renderCollectionsQuickLaunch();
     list.textContent = '';
     if (!r || !r.ok || !r.collections) {
       list.appendChild(buildEmptyState('No collections found'));
@@ -1876,11 +1936,20 @@ function renderWorkspaceCard(name, workspace) {
   actions.appendChild(deleteBtn);
   actions.appendChild(saveBtn);
 
+  var launchRow = document.createElement('div');
+  launchRow.className = 'workspace-launch';
+  getInstalledCLIDefs().forEach(function(def) {
+    launchRow.appendChild(buildLaunchButton(def, name));
+  });
+
   card.appendChild(title);
   card.appendChild(hint);
   card.appendChild(labelInput);
   card.appendChild(cols);
   card.appendChild(actions);
+  if (launchRow.childNodes.length) {
+    card.appendChild(launchRow);
+  }
   return card;
 }
 
@@ -1909,11 +1978,14 @@ function loadWorkspaces() {
 
   Promise.all([
     callApi('get_workspaces'),
-    callApi('get_collections')
+    callApi('get_collections'),
+    callApi('detect_clis')
   ]).then(function(results) {
     var workspacesRes = results[0];
     var collectionsRes = results[1];
+    var cliRes = results[2];
     var workspaces = workspacesRes && workspacesRes.ok && workspacesRes.workspaces ? workspacesRes.workspaces : {};
+    setDetectedCLIs(cliRes && cliRes.ok && cliRes.clis ? cliRes.clis : {});
 
     if (!workspacesRes || !workspacesRes.ok) {
       workspaceCollections = listWorkspaceCollectionDefs(
@@ -2197,9 +2269,9 @@ document.getElementById('btnSaveSettings').addEventListener('click', function() 
 var cliIgnored = { claude: false, gemini: false, codex: false };
 
 var CLI_DEFS = [
-  { id: 'claude', label: 'Claude Code', icon: '\u25C6' },
-  { id: 'gemini', label: 'Gemini CLI',  icon: '\u2746' },
-  { id: 'codex',  label: 'Codex',       icon: '\u2B21' }
+  { id: 'claude', label: 'Claude Code', launchLabel: 'Claude', icon: '\u25C6' },
+  { id: 'gemini', label: 'Gemini CLI',  launchLabel: 'Gemini', icon: '\u2746' },
+  { id: 'codex',  label: 'Codex',       launchLabel: 'Codex', icon: '\u2B21' }
 ];
 
 function buildCLICard(def, info, ignored) {
@@ -2293,6 +2365,7 @@ function loadCLIStatus() {
     var statsR = results[1];
     var clis    = (cliR && cliR.clis)   || {};
     var ignored = (statsR && statsR.stats && statsR.stats.ignored_clis) || {};
+    setDetectedCLIs(clis);
 
     cliIgnored = {
       claude: !!ignored.claude,

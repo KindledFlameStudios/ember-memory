@@ -386,6 +386,52 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
+    def launch_cli(self, cli, workspace=""):
+        """Launch a CLI terminal with a specific workspace active."""
+        import subprocess
+        commands = {
+            "claude": "claude",
+            "gemini": "gemini",
+            "codex": "codex",
+        }
+        cmd = commands.get(cli)
+        if not cmd:
+            return {"ok": False, "msg": f"Unknown CLI: {cli}"}
+        if not shutil.which(cmd):
+            return {"ok": False, "msg": f"{cli} is not installed"}
+
+        env = dict(os.environ)
+        if workspace:
+            env["EMBER_WORKSPACE"] = workspace
+        env["EMBER_AI_ID"] = cli if cli != "claude" else "claude"
+
+        try:
+            if platform.system() == "Linux":
+                # Try gnome-terminal, then xterm, then just subprocess
+                if shutil.which("gnome-terminal"):
+                    ws_export = f"export EMBER_WORKSPACE='{workspace}' EMBER_AI_ID='{cli}'; " if workspace else ""
+                    subprocess.Popen([
+                        "gnome-terminal", "--", "bash", "-c",
+                        f"{ws_export}{cmd}; exec bash"
+                    ])
+                elif shutil.which("xterm"):
+                    subprocess.Popen(["xterm", "-e", cmd], env=env)
+                else:
+                    subprocess.Popen([cmd], env=env)
+            elif platform.system() == "Darwin":
+                ws_export = f"export EMBER_WORKSPACE='{workspace}' EMBER_AI_ID='{cli}' && " if workspace else ""
+                subprocess.Popen([
+                    "osascript", "-e",
+                    f'tell app "Terminal" to do script "{ws_export}{cmd}"'
+                ])
+            else:
+                subprocess.Popen([cmd], env=env)
+
+            label = workspace or "default"
+            return {"ok": True, "msg": f"Launched {cli} with workspace '{label}'"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
     def create_collection(self, name, scope="shared"):
         """Create a collection with optional AI namespace."""
         try:
