@@ -6,12 +6,14 @@ Provides tools to store, search, update, and manage knowledge across sessions.
 """
 
 import logging
+import os
 from datetime import datetime, timezone
 
 from mcp.server.fastmcp import FastMCP
 from ember_memory import config
 from ember_memory.core.embeddings.loader import get_embedding_provider
 from ember_memory.core.backends.loader import get_backend_v2
+from ember_memory.core.search import retrieve
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +30,130 @@ anything worth remembering. Collections organize memories by topic.
 
 embedder = get_embedding_provider()
 backend = get_backend_v2()
+
+
+def _current_ai_id() -> str:
+    """Return the current CLI identity for namespace-aware retrieval."""
+    return os.environ.get("EMBER_AI_ID", "claude")
+
+
+def _current_workspace() -> str | None:
+    """Return the active workspace name, if one is set."""
+    workspace = os.environ.get("EMBER_WORKSPACE", "").strip()
+    return workspace or None
+
+
+def _engine_db_path() -> str:
+    """Return the configured Engine SQLite path."""
+    return os.path.join(config.DATA_DIR, "engine", "engine.db")
+
+
+def _preview_text(content: str, max_chars: int = 200) -> str:
+    """Collapse whitespace and trim content for compact summaries."""
+    compact = " ".join(content.split())
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max_chars - 3].rstrip() + "..."
+
+
+def _format_search_result(
+    heading: str,
+    content: str,
+    metadata: dict | None,
+    similarity: float | None = None,
+    composite_score: float | None = None,
+) -> str:
+    """Format a single search result block for MCP output."""
+    meta = metadata or {}
+    score_parts = []
+    if composite_score is not None:
+        score_parts.append(f"composite: {composite_score:.3f}")
+    if similarity is not None:
+        score_parts.append(f"similarity: {similarity:.3f}")
+
+    score = f" ({', '.join(score_parts)})" if score_parts else ""
+    tags = f" [tags: {meta.get('tags', '')}]" if meta.get("tags") else ""
+    source = f" [source: {meta.get('source', '')}]" if meta.get("source") else ""
+    return f"{heading}{score}{tags}{source}\n{content}"
+
+
+def _get_hot_memories(limit: int, ai_id: str) -> tuple[list[dict], list[str]]:
+    """Return the hottest tracked memories plus a deduped topic list."""
+    from ember_memory.core.engine.heat import HeatMap
+    from ember_memory.core.engine.state import EngineState
+    from ember_memory.core.namespaces import parse_collection_name
+
+    db_path = _engine_db_path()
+    if not os.path.exists(db_path):
+        return [], []
+
+    state = EngineState(db_path=db_path)
+    heat_map = HeatMap(state)
+    heat_scope = ai_id if heat_map.get_mode() == "per-cli" else None
+    ranked_heat = sorted(
+        state.get_all_heat(ai_id=heat_scope).items(),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+
+    hot_memories = []
+    hot_topics = []
+    for memory_id, heat in ranked_heat:
+        meta = state.get_memory_meta(memory_id) or {}
+        collection = meta.get("collection", "unknown")
+        preview = meta.get("preview", f"Memory {memory_id}")
+        hot_memories.append(
+            {
+                "id": memory_id,
+                "collection": collection,
+                "preview": preview,
+                "heat": heat,
+            }
+        )
+        topic = parse_collection_name(collection)[1] if collection != "unknown" else memory_id
+        if topic not in hot_topics:
+            hot_topics.append(topic)
+        if len(hot_memories) >= limit:
+            break
+
+    return hot_memories, hot_topics
+
+
+def _build_handoff_packet(
+    topic: str,
+    key_context: list[str],
+    hot_topics: list[str],
+    ai_id: str,
+) -> str:
+    """Render a compact, readable hand-off packet."""
+    subject = topic or (hot_topics[0] if hot_topics else "Recent Context")
+    lines = [
+        "=== Hand-off Packet ===",
+        f"Topic: {topic or 'Recent Context'}",
+        f"Generated: {datetime.now(timezone.utc).isoformat()}",
+        f"AI: {ai_id}",
+        "",
+        "## Key Context",
+    ]
+
+    if key_context:
+        lines.extend(key_context)
+    else:
+        lines.append("No recent context available yet.")
+
+    lines.extend(["", "## Hot Topics"])
+    if hot_topics:
+        lines.extend(f"- {hot_topic}" for hot_topic in hot_topics)
+    else:
+        lines.append("- None yet")
+
+    lines.extend([
+        "",
+        "## Suggested Next Steps",
+        f'- "What progress have we made on {subject}?"',
+        f'- "Continue from where {ai_id} left off on {subject}"',
+    ])
+    return "\n".join(lines)
 
 
 # ── Tools ────────────────────────────────────────────────────────────────────
@@ -74,42 +200,52 @@ def memory_find(
 
     Args:
         query: Natural language search query (e.g. 'how does routing work').
-        collection: Collection to search (default: general). Use '*' to search all.
+        collection: Collection to search (default: general). Use '' or '*' to search all.
         n_results: Max results to return (default: 10).
         tags_filter: Only return entries containing this tag (e.g. 'backend').
     """
-    n = n_results or config.SEARCH_LIMIT
-    query_embedding = embedder.embed(query)
+    n = max(n_results or config.SEARCH_LIMIT, 1)
 
-    if collection == "*":
-        all_results = []
-        for col_info in backend.list_collections():
-            col_name = col_info["name"]
-            try:
-                results = backend.search(col_name, query_embedding, n)
-                for r in results:
-                    if tags_filter and tags_filter not in r["metadata"].get("tags", ""):
-                        continue
-                    r["_collection"] = col_name
-                    all_results.append(r)
-            except Exception:
+    if collection in ("", "*"):
+        raw_limit = n * 3 if tags_filter else n
+        results = retrieve(
+            prompt=query,
+            ai_id=_current_ai_id(),
+            workspace=_current_workspace(),
+            backend=backend,
+            embedder=embedder,
+            limit=raw_limit,
+            similarity_threshold=config.SIMILARITY_THRESHOLD,
+            engine_db_path=_engine_db_path(),
+        )
+
+        filtered_results = []
+        for result in results:
+            if tags_filter and tags_filter not in result.metadata.get("tags", ""):
                 continue
+            filtered_results.append(result)
+            if len(filtered_results) >= n:
+                break
 
-        all_results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
-        all_results = all_results[:n]
-
-        if not all_results:
+        if not filtered_results:
             return "No memories found across any collection."
 
         output = []
-        for r in all_results:
-            score = f" (similarity: {r['similarity']:.3f})" if r.get("similarity") is not None else ""
-            tags = f" [tags: {r['metadata'].get('tags', '')}]" if r["metadata"].get("tags") else ""
-            source = f" [source: {r['metadata'].get('source', '')}]" if r["metadata"].get("source") else ""
-            output.append(f"**[{r['_collection']}]**{score}{tags}{source}\n{r['content']}")
+        for result in filtered_results:
+            composite_score = result.composite_score if result.score_breakdown else None
+            output.append(
+                _format_search_result(
+                    heading=f"**[{result.collection}]**",
+                    content=result.content,
+                    metadata=result.metadata,
+                    similarity=result.similarity,
+                    composite_score=composite_score,
+                )
+            )
         return "\n\n---\n\n".join(output)
 
     col_name = collection or config.DEFAULT_COLLECTION
+    query_embedding = embedder.embed(query)
     results = backend.search(col_name, query_embedding, n)
 
     if not results:
@@ -117,17 +253,67 @@ def memory_find(
 
     output = []
     for r in results:
-        if tags_filter and tags_filter not in r["metadata"].get("tags", ""):
+        metadata = r.get("metadata", {})
+        if tags_filter and tags_filter not in metadata.get("tags", ""):
             continue
-        score = f" (similarity: {r['similarity']:.3f})" if r.get("similarity") is not None else ""
-        tags = f" [tags: {r['metadata'].get('tags', '')}]" if r["metadata"].get("tags") else ""
-        source = f" [source: {r['metadata'].get('source', '')}]" if r["metadata"].get("source") else ""
-        output.append(f"**{r['id']}**{score}{tags}{source}\n{r['content']}")
+        output.append(
+            _format_search_result(
+                heading=f"**{r['id']}**",
+                content=r["content"],
+                metadata=metadata,
+                similarity=r.get("similarity"),
+            )
+        )
 
     if not output:
         return f"No matching memories found in '{col_name}'."
 
     return f"Found {len(output)} results in '{col_name}':\n\n" + "\n\n---\n\n".join(output)
+
+
+@mcp.tool()
+def memory_handoff(topic: str = "", limit: int = 5) -> str:
+    """Generate a hand-off packet — a compact summary of recent relevant context
+    that another AI CLI can use to pick up where you left off.
+
+    Args:
+        topic: Optional topic focus for the hand-off. If empty, uses recent hot memories.
+        limit: Number of memories to include.
+    """
+    packet_limit = max(limit, 1)
+    ai_id = _current_ai_id()
+    hot_memories, hot_topics = _get_hot_memories(packet_limit, ai_id)
+
+    key_context = []
+    if topic:
+        results = retrieve(
+            prompt=topic,
+            ai_id=ai_id,
+            workspace=_current_workspace(),
+            backend=backend,
+            embedder=embedder,
+            limit=packet_limit,
+            similarity_threshold=config.SIMILARITY_THRESHOLD,
+            engine_db_path=_engine_db_path(),
+        )
+        key_context = [
+            f"{idx}. [{result.collection}] {_preview_text(result.content)}"
+            for idx, result in enumerate(results, 1)
+        ]
+        if not hot_topics:
+            hot_topics = list(dict.fromkeys(result.collection for result in results))
+    else:
+        key_context = [
+            f"{idx}. [{memory['collection']}] {_preview_text(memory['preview'])}"
+            for idx, memory in enumerate(hot_memories, 1)
+        ]
+
+    return _build_handoff_packet(
+        topic=topic,
+        key_context=key_context,
+        hot_topics=hot_topics[:packet_limit],
+        ai_id=ai_id,
+    )
 
 
 @mcp.tool()

@@ -15,6 +15,7 @@ import platform
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 # On Linux with conda, the system WebKit2 typelib may not be on GI's search path.
 # Add the standard system typelib directory so pywebview can find GTK + WebKit2.
 if platform.system() == "Linux":
@@ -518,6 +519,51 @@ class EmberAPI:
                 f"What changed over time in {collection_name}?",
             ]
         }
+
+    def generate_handoff(self, topic=""):
+        """Generate a hand-off packet from the controller."""
+        try:
+            from ember_memory.core.search import retrieve
+            from ember_memory.core.embeddings.loader import get_embedding_provider
+            from ember_memory.core.backends.loader import get_backend_v2
+
+            embedder = get_embedding_provider()
+            backend = get_backend_v2()
+            engine_db_path = os.path.join(
+                load_config().get("data_dir", DEFAULT_DATA_DIR),
+                "engine",
+                "engine.db",
+            )
+
+            if topic:
+                results = retrieve(
+                    prompt=topic,
+                    ai_id="claude",
+                    backend=backend,
+                    embedder=embedder,
+                    limit=5,
+                    similarity_threshold=0.3,
+                    engine_db_path=engine_db_path,
+                )
+                lines = [
+                    "=== Hand-off Packet ===",
+                    f"Topic: {topic}",
+                    f"Generated: {datetime.now().isoformat()}",
+                    "",
+                    "## Key Context",
+                ]
+                for i, result in enumerate(results, 1):
+                    preview = result.content[:200].replace("\n", " ")
+                    lines.append(f"{i}. [{result.collection}] {preview}")
+                lines.append("")
+                lines.append("## Suggested Next Steps")
+                lines.append(f'- "What progress have we made on {topic}?"')
+                lines.append(f'- "What decisions were made about {topic}?"')
+                return {"ok": True, "packet": "\n".join(lines)}
+
+            return {"ok": True, "packet": "Provide a topic to generate a hand-off packet."}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
 
     def delete_collection(self, name):
         cfg = load_config()
