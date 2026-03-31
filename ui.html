@@ -293,25 +293,21 @@ html, body {
 .import-wizard.visible { display: block; }
 .import-wizard-title { font-size: 16px; font-weight: 600; color: var(--ember); margin-bottom: 4px; }
 .import-wizard-sub { font-size: 12px; color: var(--fg-muted); margin-bottom: 16px; }
-.import-mode-toggle { display: flex; gap: 0; margin-bottom: 16px; border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,120,32,0.2); }
-.import-mode-btn { flex: 1; padding: 8px 12px; background: transparent; border: none; color: var(--fg-muted); font-size: 12px; cursor: pointer; font-family: var(--font-mono); transition: all 0.2s; }
-.import-mode-btn.active { background: rgba(255,120,32,0.15); color: var(--ember); font-weight: 600; }
-.import-mode-panel { display: none; }
-.import-mode-panel.active { display: block; }
 .import-step { margin-bottom: 12px; }
 .import-step-label { font-size: 11px; font-weight: 600; color: var(--fg-muted); text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.5px; }
 .import-success { background: rgba(255,120,32,0.08); border-radius: 8px; padding: 14px; margin-top: 12px; border-left: 3px solid var(--ember); }
 .import-success-stat { font-family: var(--font-mono); font-size: 13px; color: var(--fg); margin-bottom: 4px; }
-.import-query-btn { background: rgba(255,120,32,0.1); border: 1px solid rgba(255,120,32,0.3); color: var(--ember); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 11px; font-family: var(--font-mono); margin: 3px; display: inline-block; }
-.import-query-btn:hover { background: rgba(255,120,32,0.2); }
 .import-step-input { width: 100%; }
-.import-path-row { display: flex; align-items: center; gap: 8px; }
-.import-path-row input { flex: 1; }
 .import-action-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 .import-supported { font-size: 11px; color: var(--fg-muted); margin-top: 4px; }
 .import-success-title { font-size: 12px; font-weight: 700; color: var(--ember-glow); margin-bottom: 8px; }
-.import-query-row { margin-top: 8px; display: flex; flex-wrap: wrap; }
 .import-tip { font-size: 11px; color: var(--fg-muted); margin-top: 14px; line-height: 1.5; }
+.import-file-list { margin: 8px 0; max-height: 120px; overflow-y: auto; }
+.import-file-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 11px; font-family: var(--font-mono); color: var(--fg); background: rgba(255,255,255,0.03); border-radius: 4px; margin-bottom: 2px; }
+.import-file-remove { background: none; border: none; color: var(--fg-muted); cursor: pointer; font-size: 14px; padding: 0 4px; }
+.import-file-remove:hover { color: var(--error); }
+.import-dest-new { margin-top: 8px; padding: 8px; background: rgba(255,120,32,0.05); border-radius: 6px; }
+.import-pick-row { display: flex; gap: 8px; margin-bottom: 8px; }
 
 /* CinderACE promo */
 .promo-card {
@@ -634,62 +630,42 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
 
       <div class="import-wizard" id="importWizard">
         <div class="import-wizard-title">Import Knowledge</div>
-        <div class="import-wizard-sub">Manage collection files. Add a folder into an existing collection or create a new collection from a folder import.</div>
+        <div class="import-wizard-sub">Whatya got for me? Bring files, bring a folder, then choose where they should live.</div>
 
-        <div class="import-mode-toggle">
-          <button type="button" class="import-mode-btn active" id="btnImportModeExisting">Add to Existing</button>
-          <button type="button" class="import-mode-btn" id="btnImportModeNew">Create New</button>
+        <div class="import-step">
+          <div class="import-step-label">1. Pick your content</div>
+          <div class="import-pick-row">
+            <button class="btn btn-secondary btn-sm" id="btnImportBrowseFiles">Select Files</button>
+            <button class="btn btn-secondary btn-sm" id="btnImportBrowseFolder">Select Folder</button>
+          </div>
+          <div class="import-file-list" id="importFileList"></div>
+          <div class="import-supported">Supports .md, .txt, .json, and .jsonl files.</div>
         </div>
 
-        <div class="import-mode-panel active" id="importModeExisting">
-          <div class="import-step">
-            <div class="import-step-label">1. Choose a collection</div>
-            <select id="importExistingCollection"></select>
-          </div>
-
-          <div class="import-step">
-            <div class="import-step-label">2. Pick a source folder</div>
-            <div class="import-path-row">
-              <input type="text" id="importExistingSourcePath" class="import-step-input" readonly placeholder="Click Browse to select a folder..." />
-              <button class="btn btn-secondary btn-sm" id="btnImportExistingBrowse">Browse</button>
+        <div class="import-step">
+          <div class="import-step-label">2. Choose destination</div>
+          <select id="importCollectionSelect"></select>
+          <div class="import-dest-new" id="importDestNew">
+            <div class="form-row" style="margin-bottom:8px;">
+              <input type="text" class="fluid" id="importCollectionName" placeholder="collection-name" />
             </div>
-            <div class="import-supported">Adds supported files from the selected folder into the existing collection.</div>
-          </div>
-
-          <div class="import-action-row">
-            <button class="btn btn-primary" id="btnRunAddToCollection">Import</button>
+            <div class="form-row">
+              <select id="importScope">
+                <option value="shared">Shared</option>
+                <option value="claude">Kael only</option>
+                <option value="gemini">Seren only</option>
+                <option value="codex">Solace only</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <div class="import-mode-panel" id="importModeNew">
-          <div class="import-step">
-            <div class="import-step-label">1. Pick a source folder</div>
-            <div class="import-path-row">
-              <input type="text" id="importNewSourcePath" class="import-step-input" readonly placeholder="Click Browse to select a folder..." />
-              <button class="btn btn-secondary btn-sm" id="btnImportNewBrowse">Browse</button>
-            </div>
-            <div class="import-supported">Supports .md, .txt, .json, and .jsonl files.</div>
-          </div>
-
-          <div class="import-step">
-            <div class="import-step-label">2. Collection name</div>
-            <input type="text" id="importCollectionName" class="import-step-input" placeholder="auto-filled from folder name" />
-            <div class="import-supported">Auto-filled from folder name. Edit if you'd like a different name.</div>
-          </div>
-
-          <div class="import-step">
-            <div class="import-step-label">3. Scope</div>
-            <select id="importScope">
-              <option value="shared">Shared</option>
-              <option value="claude">Kael</option>
-              <option value="gemini">Seren</option>
-              <option value="codex">Solace</option>
-            </select>
-          </div>
-
+        <div class="import-step">
+          <div class="import-step-label">3. Import</div>
           <div class="import-action-row">
-            <button class="btn btn-primary" id="btnRunImport">Create &amp; Import</button>
+            <button class="btn btn-primary" id="btnRunImport">Import</button>
           </div>
+          <div class="import-supported" id="importProgressText"></div>
         </div>
 
         <div id="importSuccessHost"></div>
@@ -1872,6 +1848,25 @@ function buildOwnerSection(ownerKey, collections, labels, disabledMap) {
   masterToggle.appendChild(masterSlider);
   rightSide.appendChild(masterToggle);
 
+  // Delete entire section button
+  var delSectionBtn = document.createElement('button');
+  delSectionBtn.className = 'btn btn-danger btn-sm';
+  delSectionBtn.textContent = 'Delete All';
+  delSectionBtn.title = 'Delete all collections in this section';
+  delSectionBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    var sectionLabel = ownerLabels[ownerKey] || ownerKey;
+    if (!confirm('Delete ALL collections in ' + sectionLabel + '? This removes ' + collections.length + ' collections and all their data. Cannot be undone.')) return;
+    var promises = collections.map(function(c) {
+      return callApi('delete_collection', c.name);
+    });
+    Promise.all(promises).then(function() {
+      showToast('Deleted all in ' + sectionLabel, 'ok');
+      loadCollections();
+    });
+  });
+  rightSide.appendChild(delSectionBtn);
+
   masterCheck.addEventListener('change', function() {
     var enable = masterCheck.checked;
     // Toggle all collections in this section
@@ -2010,12 +2005,26 @@ function clearImportSuccess() {
   host.textContent = '';
 }
 
-var importWizardMode = 'existing';
+function setImportProgress(message) {
+  var progress = document.getElementById('importProgressText');
+  if (!progress) return;
+  progress.textContent = message || '';
+}
 
-function sanitizeImportCollectionName(path) {
-  var parts = String(path || '').replace(/\/+$/, '').split('/');
-  var folderName = parts[parts.length - 1] || 'imported';
-  var sanitized = folderName
+var IMPORT_NEW_COLLECTION = '__new__';
+var importSelectedItems = [];
+
+function getImportPathBaseName(path) {
+  var cleaned = String(path || '').replace(/[\\/]+$/, '');
+  if (!cleaned) return '';
+  var parts = cleaned.split(/[\\/]/);
+  return parts[parts.length - 1] || cleaned;
+}
+
+function sanitizeImportCollectionName(source) {
+  var baseName = getImportPathBaseName(source) || 'imported';
+  var trimmed = baseName.replace(/\.[^.]+$/, '');
+  var sanitized = trimmed
     .toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9-]/g, '')
@@ -2031,42 +2040,106 @@ function getImportScopeLabel(owner) {
   return 'Shared';
 }
 
-function getImportQueryTopic(collectionName) {
-  return parseOwner(collectionName || '').topic || String(collectionName || '');
-}
-
 function focusImportWizard() {
-  if (importWizardMode === 'existing') {
-    var existingSelect = document.getElementById('importExistingCollection');
-    if (existingSelect) existingSelect.focus();
+  var select = document.getElementById('importCollectionSelect');
+  if (select && select.value && select.value !== IMPORT_NEW_COLLECTION) {
+    select.focus();
     return;
   }
   var nameInput = document.getElementById('importCollectionName');
   if (nameInput) nameInput.focus();
 }
 
-function setImportMode(mode) {
-  importWizardMode = mode === 'new' ? 'new' : 'existing';
+function suggestImportCollectionName() {
+  if (!importSelectedItems.length) return 'imported';
+  if (importSelectedItems.length === 1) {
+    return sanitizeImportCollectionName(importSelectedItems[0].path);
+  }
+  return 'mixed-import';
+}
 
-  var existingBtn = document.getElementById('btnImportModeExisting');
-  var newBtn = document.getElementById('btnImportModeNew');
-  var existingPanel = document.getElementById('importModeExisting');
-  var newPanel = document.getElementById('importModeNew');
+function maybeFillImportCollectionName(force) {
+  var select = document.getElementById('importCollectionSelect');
+  var input = document.getElementById('importCollectionName');
+  if (!input) return;
+  if (select && select.value !== IMPORT_NEW_COLLECTION) return;
+  if (force || !input.value.trim()) {
+    input.value = suggestImportCollectionName();
+  }
+}
 
-  if (existingBtn) existingBtn.classList.toggle('active', importWizardMode === 'existing');
-  if (newBtn) newBtn.classList.toggle('active', importWizardMode === 'new');
-  if (existingPanel) existingPanel.classList.toggle('active', importWizardMode === 'existing');
-  if (newPanel) newPanel.classList.toggle('active', importWizardMode === 'new');
+function renderImportFileList() {
+  var list = document.getElementById('importFileList');
+  if (!list) return;
+  list.textContent = '';
 
-  var wizard = document.getElementById('importWizard');
-  if (wizard && wizard.classList.contains('visible')) focusImportWizard();
+  if (!importSelectedItems.length) {
+    var empty = document.createElement('div');
+    empty.className = 'import-supported';
+    empty.textContent = 'No files or folders selected yet.';
+    list.appendChild(empty);
+    return;
+  }
+
+  importSelectedItems.forEach(function(item) {
+    var row = document.createElement('div');
+    row.className = 'import-file-item';
+    row.title = item.path;
+
+    var label = document.createElement('span');
+    var suffix = item.kind === 'folder' ? ' [folder]' : '';
+    label.textContent = getImportPathBaseName(item.path) + suffix;
+
+    var remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'import-file-remove';
+    remove.textContent = 'X';
+    remove.addEventListener('click', function() {
+      importSelectedItems = importSelectedItems.filter(function(entry) {
+        return entry.path !== item.path;
+      });
+      renderImportFileList();
+      maybeFillImportCollectionName(false);
+    });
+
+    row.appendChild(label);
+    row.appendChild(remove);
+    list.appendChild(row);
+  });
+}
+
+function addImportSelections(paths, kind) {
+  var changed = false;
+  (paths || []).forEach(function(path) {
+    var value = String(path || '').trim();
+    if (!value) return;
+    var exists = importSelectedItems.some(function(item) {
+      return item.path === value;
+    });
+    if (exists) return;
+    importSelectedItems.push({ path: value, kind: kind });
+    changed = true;
+  });
+
+  if (changed) {
+    renderImportFileList();
+    maybeFillImportCollectionName(false);
+  }
+}
+
+function syncImportDestinationState() {
+  var select = document.getElementById('importCollectionSelect');
+  var newBox = document.getElementById('importDestNew');
+  var showNew = !select || !select.value || select.value === IMPORT_NEW_COLLECTION;
+  if (newBox) newBox.style.display = showNew ? 'block' : 'none';
+  if (showNew) maybeFillImportCollectionName(false);
 }
 
 function refreshImportCollections(selectedName) {
-  var select = document.getElementById('importExistingCollection');
-  var btn = document.getElementById('btnRunAddToCollection');
+  var select = document.getElementById('importCollectionSelect');
   if (!select) return Promise.resolve();
 
+  var preferred = selectedName || select.value || IMPORT_NEW_COLLECTION;
   select.disabled = true;
   select.textContent = '';
 
@@ -2076,141 +2149,130 @@ function refreshImportCollections(selectedName) {
   select.appendChild(loadingOption);
 
   return callApi('get_collections').then(function(r) {
+    var hasSelected = false;
     select.textContent = '';
 
-    if (!r || !r.ok || !r.collections || r.collections.length === 0) {
-      var emptyOption = document.createElement('option');
-      emptyOption.value = '';
-      emptyOption.textContent = 'No collections available';
-      select.appendChild(emptyOption);
-      select.disabled = true;
-      if (btn) btn.disabled = true;
-      return;
+    var createOption = document.createElement('option');
+    createOption.value = IMPORT_NEW_COLLECTION;
+    createOption.textContent = '+ Create New Collection';
+    if (preferred === IMPORT_NEW_COLLECTION) {
+      createOption.selected = true;
+      hasSelected = true;
+    }
+    select.appendChild(createOption);
+
+    if (r && r.ok && r.collections && r.collections.length) {
+      var groups = { claude: [], gemini: [], codex: [], shared: [] };
+      r.collections.forEach(function(col) {
+        var rawName = String(col.name || '');
+        var parsed = parseOwner(rawName);
+        if (!groups[parsed.owner]) groups[parsed.owner] = [];
+        groups[parsed.owner].push({ rawName: rawName, topic: parsed.topic, count: col.count });
+      });
+
+      ['claude', 'gemini', 'codex', 'shared'].forEach(function(owner) {
+        var entries = groups[owner];
+        if (!entries || !entries.length) return;
+
+        var group = document.createElement('optgroup');
+        group.label = ownerLabels[owner] || (getImportScopeLabel(owner) + ' Collections');
+
+        entries.forEach(function(entry) {
+          var option = document.createElement('option');
+          option.value = entry.rawName;
+          option.textContent = entry.topic + ' (' + String(entry.count || 0) + ' chunks)';
+          option.setAttribute('data-scope', owner);
+          option.setAttribute('data-topic', entry.topic);
+          if (entry.rawName === preferred) {
+            option.selected = true;
+            hasSelected = true;
+          }
+          group.appendChild(option);
+        });
+
+        select.appendChild(group);
+      });
     }
 
-    r.collections.forEach(function(col, index) {
-      var option = document.createElement('option');
-      var rawName = String(col.name || '');
-      var parsed = parseOwner(rawName);
-      option.value = rawName;
-      option.textContent = getImportScopeLabel(parsed.owner) + ' / ' + parsed.topic;
-      if (selectedName ? rawName === selectedName : index === 0) option.selected = true;
-      select.appendChild(option);
-    });
+    if (!hasSelected) {
+      createOption.selected = true;
+    }
 
     select.disabled = false;
-    if (btn) btn.disabled = false;
+    syncImportDestinationState();
   }).catch(function() {
     select.textContent = '';
-    var errorOption = document.createElement('option');
-    errorOption.value = '';
-    errorOption.textContent = 'Unable to load collections';
-    select.appendChild(errorOption);
-    select.disabled = true;
-    if (btn) btn.disabled = true;
+    var createOption = document.createElement('option');
+    createOption.value = IMPORT_NEW_COLLECTION;
+    createOption.textContent = '+ Create New Collection';
+    createOption.selected = true;
+    select.appendChild(createOption);
+    select.disabled = false;
+    syncImportDestinationState();
+    showToast('Unable to load collections', 'err');
   });
 }
 
-function copyTextLegacy(text) {
-  return new Promise(function(resolve, reject) {
-    var area = document.createElement('textarea');
-    area.value = text;
-    area.setAttribute('readonly', 'readonly');
-    area.style.position = 'fixed';
-    area.style.opacity = '0';
-    area.style.pointerEvents = 'none';
-    document.body.appendChild(area);
-    area.focus();
-    area.select();
-    try {
-      var copied = document.execCommand('copy');
-      document.body.removeChild(area);
-      if (copied) resolve();
-      else reject(new Error('Copy failed'));
-    } catch (err) {
-      document.body.removeChild(area);
-      reject(err);
-    }
-  });
-}
+function readImportDestination() {
+  var select = document.getElementById('importCollectionSelect');
+  if (!select) return null;
 
-function copyText(text) {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    return navigator.clipboard.writeText(text).catch(function() {
-      return copyTextLegacy(text);
-    });
+  if (!select.value || select.value === IMPORT_NEW_COLLECTION) {
+    var newName = document.getElementById('importCollectionName').value.trim();
+    if (!newName) return { ok: false, msg: 'Enter a collection name' };
+    return {
+      ok: true,
+      name: newName,
+      scope: document.getElementById('importScope').value || 'shared',
+      selectedValue: IMPORT_NEW_COLLECTION,
+    };
   }
-  return copyTextLegacy(text);
+
+  var option = select.options[select.selectedIndex];
+  var parsed = parseOwner(select.value);
+  return {
+    ok: true,
+    name: option ? (option.getAttribute('data-topic') || parsed.topic) : parsed.topic,
+    scope: option ? (option.getAttribute('data-scope') || parsed.owner) : parsed.owner,
+    selectedValue: select.value,
+  };
 }
 
-function buildImportQueryButton(query) {
-  var btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'import-query-btn';
-  btn.textContent = query;
-  btn.addEventListener('click', function() {
-    copyText(query).then(function() {
-      showToast('Copied — paste into your CLI', 'ok');
-    }).catch(function() {
-      showToast('Copy failed', 'err');
-    });
-  });
-  return btn;
-}
-
-function renderImportSuccess(result, queries) {
+function renderImportSuccess(result) {
   var host = document.getElementById('importSuccessHost');
   if (!host) return;
   host.textContent = '';
 
   var card = document.createElement('div');
   card.className = 'import-success';
-  card.appendChild(el('div', 'import-success-title', 'Resurrection complete'));
-  card.appendChild(el('div', 'import-success-stat', 'Files imported: ' + String(result.files != null ? result.files : 0)));
-  card.appendChild(el('div', 'import-success-stat', 'Chunks created: ' + String(result.chunks != null ? result.chunks : '?')));
-  card.appendChild(el('div', 'import-success-stat', 'Collection: ' + String(result.collection || 'unknown')));
 
-  if (queries && queries.length > 0) {
-    card.appendChild(el('div', 'import-step-label', 'Suggested first queries'));
-    var row = document.createElement('div');
-    row.className = 'import-query-row';
-    queries.forEach(function(query) {
-      row.appendChild(buildImportQueryButton(query));
-    });
-    card.appendChild(row);
-  }
+  var title = document.createElement('div');
+  title.className = 'import-success-title';
+  title.textContent = 'Import complete';
 
+  var files = document.createElement('div');
+  files.className = 'import-success-stat';
+  files.textContent = 'Files imported: ' + String(result.files != null ? result.files : 0);
+
+  var chunks = document.createElement('div');
+  chunks.className = 'import-success-stat';
+  chunks.textContent = 'Chunks created: ' + String(result.chunks != null ? result.chunks : 0);
+
+  var collection = document.createElement('div');
+  collection.className = 'import-success-stat';
+  collection.textContent = 'Collection: ' + String(result.collection || 'unknown');
+
+  card.appendChild(title);
+  card.appendChild(files);
+  card.appendChild(chunks);
+  card.appendChild(collection);
   host.appendChild(card);
 }
 
-function finalizeImport(result, queryTopic, selectedCollection) {
-  var targetCollection = selectedCollection || result.collection || '';
-  var queryName = queryTopic || getImportQueryTopic(targetCollection);
-  var seen = {};
-  var queries = [];
-
-  function addQueries(items) {
-    (items || []).forEach(function(query) {
-      if (!query || seen[query]) return;
-      seen[query] = true;
-      queries.push(query);
-    });
-  }
-
-  addQueries(result && result.suggested_queries);
-
-  return callApi('get_suggested_queries', queryName).then(function(qr) {
-    if (qr && qr.ok && qr.queries) addQueries(qr.queries);
-    renderImportSuccess(result, queries.slice(0, 4));
-    showToast((result && result.msg) || 'Import complete', 'ok');
-    loadCollections();
-    return refreshImportCollections(targetCollection);
-  }).catch(function() {
-    renderImportSuccess(result, queries.slice(0, 4));
-    showToast((result && result.msg) || 'Import complete', 'ok');
-    loadCollections();
-    return refreshImportCollections(targetCollection);
-  });
+function resetImportSelections() {
+  importSelectedItems = [];
+  renderImportFileList();
+  setImportProgress('');
 }
 
 // Create collection
@@ -2224,10 +2286,13 @@ document.getElementById('btnImportToggle').addEventListener('click', function() 
   var wizard = document.getElementById('importWizard');
   wizard.classList.toggle('visible');
   if (wizard.classList.contains('visible')) {
+    clearImportSuccess();
+    setImportProgress('');
+    renderImportFileList();
     refreshImportCollections().finally(function() {
       focusImportWizard();
     });
-  }
+  });
 });
 
 document.getElementById('btnCreateCancel').addEventListener('click', function() {
@@ -2251,95 +2316,66 @@ document.getElementById('btnCreateCol').addEventListener('click', function() {
   });
 });
 
-document.getElementById('btnImportModeExisting').addEventListener('click', function() {
-  setImportMode('existing');
-});
-
-document.getElementById('btnImportModeNew').addEventListener('click', function() {
-  setImportMode('new');
-});
-
-document.getElementById('btnImportExistingBrowse').addEventListener('click', function() {
-  callApi('browse_directory').then(function(r) {
-    if (r && r.ok && r.path) {
-      document.getElementById('importExistingSourcePath').value = r.path;
+document.getElementById('btnImportBrowseFiles').addEventListener('click', function() {
+  callApi('browse_files').then(function(r) {
+    if (r && r.ok && r.paths && r.paths.length) {
+      addImportSelections(r.paths, 'file');
     }
+  }).catch(function(err) {
+    showToast(String(err), 'err');
   });
 });
 
-document.getElementById('btnImportNewBrowse').addEventListener('click', function() {
+document.getElementById('btnImportBrowseFolder').addEventListener('click', function() {
   callApi('browse_directory').then(function(r) {
     if (r && r.ok && r.path) {
-      document.getElementById('importNewSourcePath').value = r.path;
-      document.getElementById('importCollectionName').value = sanitizeImportCollectionName(r.path);
+      addImportSelections([r.path], 'folder');
     }
+  }).catch(function(err) {
+    showToast(String(err), 'err');
   });
 });
 
-document.getElementById('btnRunAddToCollection').addEventListener('click', function() {
-  var btn = document.getElementById('btnRunAddToCollection');
-  var sourcePath = document.getElementById('importExistingSourcePath').value.trim();
-  var collectionName = document.getElementById('importExistingCollection').value.trim();
+document.getElementById('importCollectionSelect').addEventListener('change', function() {
+  syncImportDestinationState();
+});
 
-  if (!collectionName) {
-    showToast('Choose a collection', 'err');
+document.getElementById('btnRunImport').addEventListener('click', function() {
+  var btn = document.getElementById('btnRunImport');
+  var selectedPaths = importSelectedItems.map(function(item) { return item.path; });
+  var destination = readImportDestination();
+
+  if (!selectedPaths.length) {
+    showToast('Select files or a folder to import', 'err');
     return;
   }
 
-  if (!sourcePath) {
-    showToast('Choose a directory to import', 'err');
+  if (!destination || !destination.ok) {
+    showToast((destination && destination.msg) || 'Choose a destination', 'err');
     return;
   }
 
   clearImportSuccess();
   btn.disabled = true;
-  btn.textContent = 'Importing...';
+  btn.textContent = 'Importing ' + selectedPaths.length + ' files...';
+  setImportProgress('Importing ' + selectedPaths.length + ' files...');
 
-  callApi('add_to_collection', sourcePath, collectionName).then(function(r) {
+  callApi('import_files', selectedPaths, destination.name, destination.scope).then(function(r) {
     if (!r || !r.ok) {
       showToast((r && r.msg) || 'Import failed', 'err');
       return;
     }
-    return finalizeImport(r, getImportQueryTopic(collectionName), collectionName);
+    renderImportSuccess(r);
+    showToast((r && r.msg) || 'Import complete', 'ok');
+    loadCollections();
+    resetImportSelections();
+    return refreshImportCollections(r.collection || destination.selectedValue);
   }).catch(function(err) {
     showToast(String(err), 'err');
   }).finally(function() {
     btn.disabled = false;
     btn.textContent = 'Import';
-  });
-});
-
-document.getElementById('btnRunImport').addEventListener('click', function() {
-  var btn = document.getElementById('btnRunImport');
-  var sourcePath = document.getElementById('importNewSourcePath').value.trim();
-  var collectionName = document.getElementById('importCollectionName').value.trim();
-  var scope = document.getElementById('importScope').value;
-
-  if (!collectionName) {
-    showToast('Enter a collection name', 'err');
-    return;
-  }
-
-  if (!sourcePath) {
-    showToast('Choose a directory to import', 'err');
-    return;
-  }
-
-  clearImportSuccess();
-  btn.disabled = true;
-  btn.textContent = 'Importing...';
-
-  callApi('import_knowledge', sourcePath, collectionName, scope).then(function(r) {
-    if (!r || !r.ok) {
-      showToast((r && r.msg) || 'Import failed', 'err');
-      return;
-    }
-    return finalizeImport(r, collectionName, r.collection || '');
-  }).catch(function(err) {
-    showToast(String(err), 'err');
-  }).finally(function() {
-    btn.disabled = false;
-    btn.textContent = 'Create & Import';
+    setImportProgress('');
   });
 });
 

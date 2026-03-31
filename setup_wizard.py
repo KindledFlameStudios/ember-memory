@@ -477,66 +477,113 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
-    def import_knowledge(self, source_path, collection_name, scope="shared"):
-        """Import files from a directory into a collection. The resurrection flow."""
+    def import_files(self, paths, collection_name, scope="shared"):
+        """Import one or more files or directories into a collection."""
         try:
-            import subprocess
-            from ember_memory.core.namespaces import resolve_collection_name
+            import hashlib
+            import re as _re
+            from ember_memory.core.namespaces import parse_collection_name, resolve_collection_name
             from ember_memory.core.embeddings.loader import get_embedding_provider
             from ember_memory.core.backends.loader import get_backend_v2
+
+            raw_collection_name = str(collection_name or "").strip()
+            if not raw_collection_name:
+                return {"ok": False, "msg": "Collection name is required"}
+
+            parsed_scope, parsed_topic = parse_collection_name(raw_collection_name)
+            if parsed_topic != raw_collection_name and scope == "shared":
+                collection_name = parsed_topic
+                scope = parsed_scope
+            else:
+                collection_name = raw_collection_name
 
             full_name = resolve_collection_name(collection_name, scope)
             embedder = get_embedding_provider()
             backend = get_backend_v2()
             dim = embedder.dimension()
 
-            # Create collection if needed
             try:
                 backend.create_collection(full_name, dimension=dim)
             except Exception:
                 pass
 
-            # Copy files to sources directory for future re-ingest
-            import shutil
-            sources_dir = os.path.join(
-                load_config().get("data_dir", DEFAULT_DATA_DIR),
-                "sources",
-                scope,
-                collection_name,
-            )
-            os.makedirs(sources_dir, exist_ok=True)
+            all_files = []
+            if isinstance(paths, str):
+                paths = [paths]
 
-            files_copied = 0
-            for fname in os.listdir(source_path):
-                fpath = os.path.join(source_path, fname)
-                if os.path.isfile(fpath) and fname.endswith(('.md', '.txt', '.json', '.jsonl')):
-                    shutil.copy2(fpath, sources_dir)
-                    files_copied += 1
+            supported_exts = ('.md', '.txt', '.json', '.jsonl')
+            for path in paths or []:
+                if not path:
+                    continue
+                if os.path.isdir(path):
+                    for fname in os.listdir(path):
+                        fpath = os.path.join(path, fname)
+                        if os.path.isfile(fpath) and fname.lower().endswith(supported_exts):
+                            all_files.append(fpath)
+                elif os.path.isfile(path) and path.lower().endswith(supported_exts):
+                    all_files.append(path)
 
-            # Run ingest
-            cmd = [sys.executable, "-m", "ember_memory.ingest", sources_dir, "--collection", full_name]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=EMBER_ROOT)
+            if not all_files:
+                return {"ok": False, "msg": "No supported files found (.md, .txt, .json, .jsonl)"}
 
-            # Get final count
-            try:
-                col_count = backend.collection_count(full_name)
-            except Exception:
-                col_count = "?"
+            chunks_added = 0
+            for fpath in all_files:
+                with open(fpath, 'r', errors='replace') as f:
+                    content = f.read().strip()
+
+                if not content or len(content) < 20:
+                    continue
+
+                fname = os.path.basename(fpath)
+
+                chunks = []
+                if '## ' in content or '# ' in content:
+                    sections = _re.split(r'(?=^#{1,3} )', content, flags=_re.MULTILINE)
+                    for section in sections:
+                        section = section.strip()
+                        if len(section) > 50:
+                            chunks.append(section)
+
+                if not chunks:
+                    max_chunk = 1500
+                    for i in range(0, len(content), max_chunk):
+                        chunk = content[i:i + max_chunk].strip()
+                        if len(chunk) > 50:
+                            chunks.append(chunk)
+
+                for i, chunk in enumerate(chunks):
+                    doc_id = hashlib.md5(f'{fname}:{i}:{chunk[:100]}'.encode()).hexdigest()
+                    try:
+                        embedding = embedder.embed(chunk)
+                        backend.insert(
+                            collection=full_name,
+                            doc_id=doc_id,
+                            content=chunk,
+                            embedding=embedding,
+                            metadata={
+                                'source': fname,
+                                'chunk': i,
+                                'scope': scope,
+                                'topic': collection_name,
+                            },
+                        )
+                        chunks_added += 1
+                    except Exception:
+                        pass
 
             return {
-                "ok": result.returncode == 0,
-                "msg": f"Imported {files_copied} files into '{full_name}' ({col_count} chunks created)",
-                "files": files_copied,
+                "ok": True,
+                "msg": f"Imported {len(all_files)} files into '{full_name}' ({chunks_added} chunks)",
+                "files": len(all_files),
                 "collection": full_name,
-                "chunks": col_count,
-                "suggested_queries": [
-                    f"What do we know about {collection_name}?",
-                    f"What decisions were made in {collection_name}?",
-                    f"Summarize the key points from {collection_name}",
-                ]
+                "chunks": chunks_added,
             }
         except Exception as e:
             return {"ok": False, "msg": str(e)}
+
+    def import_knowledge(self, source_path, collection_name, scope="shared"):
+        """Compatibility wrapper for older UI callers."""
+        return self.import_files(source_path, collection_name, scope)
 
     def get_suggested_queries(self, collection_name):
         """Get suggested first queries for a collection after import."""
@@ -673,6 +720,22 @@ class EmberAPI:
             return {"ok": True, "msg": f"Embedding model set to {model_name}. Restart CLIs to apply."}
         except Exception as e:
             return {"ok": False, "msg": str(e)}
+
+    def browse_files(self):
+        """Open native file picker for individual files."""
+        import webview
+        result = webview.windows[0].create_file_dialog(
+            webview.OPEN_DIALOG,
+            allow_multiple=True,
+            file_types=(
+                'Markdown files (*.md;*.txt)',
+                'JSON files (*.json;*.jsonl)',
+                'All files (*.*)',
+            ),
+        )
+        if result and len(result) > 0:
+            return {"ok": True, "paths": list(result)}
+        return {"ok": False, "paths": []}
 
     def browse_directory(self):
         """Open native directory picker."""
