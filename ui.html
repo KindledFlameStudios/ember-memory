@@ -405,6 +405,12 @@ html, body {
 .btn-launch-gemini:hover { background: rgba(66,133,244,0.35); }
 .btn-launch-codex { background: rgba(16,163,127,0.2); color: #10a37f; }
 .btn-launch-codex:hover { background: rgba(16,163,127,0.35); }
+.launch-dir-subtitle { font-size: 11px; color: var(--fg-muted); margin-bottom: 10px; }
+.launch-dir-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.launch-dir-row:last-child { margin-bottom: 0; }
+.launch-dir-label { font-size: 12px; font-weight: 600; width: 60px; flex-shrink: 0; }
+.launch-dir-input { flex: 1; font-family: var(--font-mono); font-size: 11px; }
+.launch-dir-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
 /* CLI cards */
 .cli-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 14px; }
@@ -698,9 +704,9 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
             <div class="form-row">
               <select id="importScope">
                 <option value="shared">Shared</option>
-                <option value="claude">Kael only</option>
-                <option value="gemini">Seren only</option>
-                <option value="codex">Solace only</option>
+                <option value="claude">Claude only</option>
+                <option value="gemini">Gemini only</option>
+                <option value="codex">Codex only</option>
               </select>
             </div>
           </div>
@@ -895,6 +901,8 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
         </div>
       </div>
 
+      <div id="launchDirsSectionHost"></div>
+
       <div style="margin-top:6px;">
         <button class="btn btn-primary" id="btnSaveSettings">Save Settings</button>
       </div>
@@ -1034,6 +1042,7 @@ function initTabs() {
         }
         else if (tab === 'settings') {
           loadSettings();
+          loadLaunchDirs();
         }
         else if (tab === 'cli') loadCLIStatus();
       }
@@ -2025,6 +2034,7 @@ function buildColItem(col, labels, disabledMap) {
 }
 
 // Configurable owner labels — users can rename these
+// Owner labels — defaults use CLI names, customize via rename
 var ownerLabels = {
   'claude': "Kael's Collections",
   'gemini': "Seren's Collections",
@@ -2084,13 +2094,55 @@ function buildOwnerSection(ownerKey, collections, labels, disabledMap) {
   var section = document.createElement('div');
   section.style.marginBottom = '16px';
 
+  // Color coding per owner
+  var ownerColors = {
+    'claude': { accent: '#FF7820', bg: 'rgba(255,120,32,0.08)', text: '#FF7820' },
+    'gemini': { accent: '#4285f4', bg: 'rgba(66,133,244,0.08)', text: '#4285f4' },
+    'codex':  { accent: '#10a37f', bg: 'rgba(16,163,127,0.08)', text: '#10a37f' },
+    'shared': { accent: '#888', bg: 'rgba(255,255,255,0.04)', text: '#aaa' },
+  };
+  var colors = ownerColors[ownerKey] || ownerColors['shared'];
+
   var header = document.createElement('div');
-  header.style.cssText = 'font-size:13px; font-weight:600; color:var(--ember); margin-bottom:8px; padding:6px 10px; background:rgba(255,120,32,0.08); border-radius:6px; border-left:3px solid var(--ember);';
+  header.style.cssText = 'font-size:13px; font-weight:600; color:' + colors.text + '; margin-bottom:8px; padding:6px 10px; background:' + colors.bg + '; border-radius:6px; border-left:3px solid ' + colors.accent + ';';
 
   var headerTop = document.createElement('div');
   headerTop.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
   var label = document.createElement('span');
   label.textContent = ownerLabels[ownerKey] || ownerKey;
+  label.style.cursor = 'pointer';
+  label.title = 'Double-click to rename';
+
+  // Make section header renamable on double-click
+  label.addEventListener('dblclick', function() {
+    var current = label.textContent;
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.value = current;
+    input.className = 'col-rename-input';
+    input.style.color = colors.text;
+    label.textContent = '';
+    label.appendChild(input);
+    input.focus();
+    input.select();
+
+    function finishRename(save) {
+      var newVal = input.value.trim();
+      if (save && newVal && newVal !== current) {
+        ownerLabels[ownerKey] = newVal;
+        callApi('rename_collection_label', '__owner_' + ownerKey, newVal);
+        label.textContent = newVal;
+      } else {
+        label.textContent = current;
+      }
+    }
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); finishRename(true); }
+      if (e.key === 'Escape') { e.preventDefault(); finishRename(false); }
+    });
+    input.addEventListener('blur', function() { finishRename(true); });
+  });
+
   headerTop.appendChild(label);
 
   // Right side: count + master toggle
@@ -2222,6 +2274,11 @@ function loadCollections() {
     var labels = labelsRes && labelsRes.ok && labelsRes.labels ? labelsRes.labels : {};
     var disabledMap = statesRes && statesRes.ok && statesRes.disabled ? statesRes.disabled : {};
     setDetectedCLIs(cliRes && cliRes.ok && cliRes.clis ? cliRes.clis : {});
+    // Load saved owner section labels
+    ['claude', 'gemini', 'codex', 'shared'].forEach(function(key) {
+      var saved = labels['__owner_' + key];
+      if (saved) ownerLabels[key] = saved;
+    });
     renderCollectionsQuickLaunch();
     list.textContent = '';
     if (!r || !r.ok || !r.collections) {
@@ -2303,9 +2360,9 @@ function sanitizeImportCollectionName(source) {
 }
 
 function getImportScopeLabel(owner) {
-  if (owner === 'claude') return 'Kael';
-  if (owner === 'gemini') return 'Seren';
-  if (owner === 'codex') return 'Solace';
+  if (owner === 'claude') return 'Claude';
+  if (owner === 'gemini') return 'Gemini';
+  if (owner === 'codex') return 'Codex';
   return 'Shared';
 }
 
@@ -2607,10 +2664,15 @@ document.getElementById('btnCreateCancel').addEventListener('click', function() 
   document.getElementById('newColName').value = '';
 });
 
+function sanitizeCollectionName(raw) {
+  return raw.toLowerCase().replace(/[^a-z0-9._-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'collection';
+}
+
 document.getElementById('btnCreateCol').addEventListener('click', function() {
-  var name  = document.getElementById('newColName').value.trim();
+  var rawName = document.getElementById('newColName').value.trim();
+  if (!rawName) { showToast('Enter a collection name', 'err'); return; }
+  var name = sanitizeCollectionName(rawName);
   var scope = document.getElementById('newColScope').value;
-  if (!name) { showToast('Enter a collection name', 'err'); return; }
   callApi('create_collection', name, scope).then(function(r) {
     if (r && r.ok) {
       showToast('Created: ' + name, 'ok');
@@ -3012,6 +3074,13 @@ document.getElementById('newWorkspaceLabel').addEventListener('keydown', functio
 });
 
 var currentProvider = 'ollama';
+var launchDirDefaults = {};
+var launchDirDefaultsLoaded = false;
+var LAUNCH_DIR_DEFS = [
+  { id: 'claude', label: 'Claude', color: '#FF7820' },
+  { id: 'gemini', label: 'Gemini', color: '#4285f4' },
+  { id: 'codex',  label: 'Codex',  color: '#10a37f' }
+];
 
 function setProvider(name) {
   document.querySelectorAll('.provider-card').forEach(function(c) {
@@ -3023,6 +3092,141 @@ function setProvider(name) {
 document.querySelectorAll('.provider-card').forEach(function(card) {
   card.addEventListener('click', function() { setProvider(card.getAttribute('data-provider')); });
 });
+
+function getLaunchDirInputId(cli) {
+  return 'launchDirInput-' + cli;
+}
+
+function getLaunchDirInput(cli) {
+  return document.getElementById(getLaunchDirInputId(cli));
+}
+
+function ensureLaunchDirsSection() {
+  var host = document.getElementById('launchDirsSectionHost');
+  if (!host || host.childNodes.length) return;
+
+  var section = document.createElement('div');
+  section.className = 'settings-section';
+
+  var title = document.createElement('div');
+  title.className = 'settings-section-title';
+  title.textContent = 'Launch Directories';
+
+  var subtitle = document.createElement('div');
+  subtitle.className = 'launch-dir-subtitle';
+  subtitle.textContent = 'Where each CLI opens when launched from the controller';
+
+  var card = document.createElement('div');
+  card.className = 'card';
+  card.style.marginBottom = '0';
+
+  LAUNCH_DIR_DEFS.forEach(function(def) {
+    var row = document.createElement('div');
+    row.className = 'launch-dir-row';
+
+    var label = document.createElement('div');
+    label.className = 'launch-dir-label';
+    label.textContent = def.label;
+    label.style.color = def.color;
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'launch-dir-input';
+    input.id = getLaunchDirInputId(def.id);
+    input.readOnly = true;
+    input.placeholder = 'Loading...';
+
+    var actions = document.createElement('div');
+    actions.className = 'launch-dir-actions';
+
+    var browseBtn = document.createElement('button');
+    browseBtn.type = 'button';
+    browseBtn.className = 'btn btn-secondary btn-sm';
+    browseBtn.textContent = 'Browse';
+    browseBtn.addEventListener('click', function() {
+      browseLaunchDir(def.id);
+    });
+
+    var resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'btn btn-secondary btn-sm';
+    resetBtn.textContent = 'Reset to Home';
+    resetBtn.addEventListener('click', function() {
+      resetLaunchDir(def.id);
+    });
+
+    actions.appendChild(browseBtn);
+    actions.appendChild(resetBtn);
+    row.appendChild(label);
+    row.appendChild(input);
+    row.appendChild(actions);
+    card.appendChild(row);
+  });
+
+  section.appendChild(title);
+  section.appendChild(subtitle);
+  section.appendChild(card);
+  host.appendChild(section);
+}
+
+function setLaunchDirInputs(dirs) {
+  LAUNCH_DIR_DEFS.forEach(function(def) {
+    var input = getLaunchDirInput(def.id);
+    if (input) input.value = dirs && dirs[def.id] ? dirs[def.id] : '';
+  });
+}
+
+function setLaunchDirValue(cli, value) {
+  var input = getLaunchDirInput(cli);
+  if (input) input.value = value || '';
+}
+
+function loadLaunchDirs() {
+  ensureLaunchDirsSection();
+  callApi('get_launch_dirs').then(function(r) {
+    if (!r || !r.ok || !r.dirs) {
+      setLaunchDirInputs({});
+      return;
+    }
+
+    if (!launchDirDefaultsLoaded) {
+      LAUNCH_DIR_DEFS.forEach(function(def) {
+        launchDirDefaults[def.id] = r.dirs[def.id] || '';
+      });
+      launchDirDefaultsLoaded = true;
+    }
+
+    setLaunchDirInputs(r.dirs);
+  });
+}
+
+function saveLaunchDir(cli, path) {
+  return callApi('set_launch_dir', cli, path).then(function(r) {
+    if (r && r.ok) {
+      setLaunchDirValue(cli, path);
+      showToast((r.msg) || 'Launch directory updated', 'ok');
+      return true;
+    }
+    showToast((r && r.msg) || 'Failed to update launch directory', 'err');
+    return false;
+  });
+}
+
+function browseLaunchDir(cli) {
+  callApi('browse_directory').then(function(r) {
+    if (!r || !r.ok || !r.path) return;
+    saveLaunchDir(cli, r.path);
+  });
+}
+
+function resetLaunchDir(cli) {
+  var homePath = launchDirDefaults[cli] || '';
+  if (!homePath) {
+    showToast('Home path unavailable', 'err');
+    return;
+  }
+  saveLaunchDir(cli, homePath);
+}
 
 function loadSettings() {
   callApi('get_config').then(function(r) {
@@ -3314,6 +3518,7 @@ function init() {
     loadWorkspaces();
   } else if (tab === 'settings') {
     loadSettings();
+    loadLaunchDirs();
   } else if (tab === 'cli') {
     loadCLIStatus();
   }
