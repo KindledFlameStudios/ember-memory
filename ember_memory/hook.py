@@ -47,11 +47,19 @@ def debug_log(msg):
 LAST_RETRIEVAL = os.path.join(config.DATA_DIR, "last_retrieval.json")
 
 
+def get_last_retrieval_path(ai_id=None):
+    if not ai_id:
+        return LAST_RETRIEVAL
+    safe_ai = re.sub(r"[^a-zA-Z0-9_-]", "_", str(ai_id))
+    return os.path.join(config.DATA_DIR, f"last_retrieval_{safe_ai}.json")
+
+
 def write_activity(prompt_preview, results, elapsed_ms):
     """Write activity log + last retrieval snapshot for dashboard."""
     entry = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "session": SESSION_ID,
+        "ai_id": AI_ID,
         "prompt": prompt_preview[:120],
         "hits": len(results),
         "top_score": round(results[0].composite_score, 3) if results else 0,
@@ -84,8 +92,9 @@ def write_activity(prompt_preview, results, elapsed_ms):
         ],
     }
     try:
-        with open(LAST_RETRIEVAL, "w") as f:
-            json.dump(snapshot, f, indent=2)
+        for path in (get_last_retrieval_path(), get_last_retrieval_path(AI_ID)):
+            with open(path, "w") as f:
+                json.dump(snapshot, f, indent=2)
     except Exception:
         pass
 

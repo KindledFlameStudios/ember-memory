@@ -36,6 +36,7 @@ CONFIG_FILE = os.path.join(CONFIG_HOME, "config.env")
 CLAUDE_JSON = os.path.expanduser("~/.claude.json")
 CLAUDE_SETTINGS = os.path.expanduser("~/.claude/settings.json")
 EMBER_ROOT = os.path.dirname(os.path.abspath(__file__))
+DASHBOARD_AI_IDS = ("claude", "gemini", "codex")
 
 
 # ── Config I/O ───────────────────────────────────────────────────────────────
@@ -91,6 +92,40 @@ def save_config(config):
     ]
     with open(CONFIG_FILE, 'w') as f:
         f.write("\n".join(lines) + "\n")
+
+
+def normalize_dashboard_ai_id(ai_id):
+    raw = str(ai_id or "").strip().lower()
+    if not raw or raw == "all":
+        return None
+    return raw
+
+
+def get_dashboard_heat(state, ai_id=None):
+    selected_ai = normalize_dashboard_ai_id(ai_id)
+    if selected_ai is not None:
+        return state.get_all_heat(ai_id=selected_ai)
+
+    merged = {}
+    for scope in (None, *DASHBOARD_AI_IDS):
+        for memory_id, heat in state.get_all_heat(ai_id=scope).items():
+            merged[memory_id] = merged.get(memory_id, 0.0) + float(heat)
+    return merged
+
+
+def get_last_retrieval_path(data_dir, ai_id=None):
+    selected_ai = normalize_dashboard_ai_id(ai_id)
+    if selected_ai is None:
+        return os.path.join(data_dir, "last_retrieval.json")
+    safe_ai = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in selected_ai)
+    return os.path.join(data_dir, f"last_retrieval_{safe_ai}.json")
+
+
+def read_json_file(path):
+    if not os.path.exists(path):
+        return None
+    with open(path, "r") as f:
+        return json.load(f)
 
 
 # ── API Backend (exposed to JS via pywebview) ────────────────────────────────
@@ -746,11 +781,10 @@ class EmberAPI:
             return {"ok": True, "path": result[0]}
         return {"ok": False, "path": ""}
 
-    def get_engine_stats(self):
+    def get_engine_stats(self, ai_id=None):
         """Get Ember Engine dashboard data."""
         try:
             from ember_memory.core.engine.state import EngineState
-            from ember_memory.core.engine.stats import get_engine_stats
             cfg = load_config()
             data_dir = cfg.get("data_dir", DEFAULT_DATA_DIR)
             db_path = os.path.join(data_dir, "engine", "engine.db")
@@ -762,45 +796,94 @@ class EmberAPI:
                     "ignored_clis": {"claude": False, "gemini": False, "codex": False}
                 }}
             state = EngineState(db_path=db_path)
-            return {"ok": True, "stats": get_engine_stats(state)}
+            all_heat = get_dashboard_heat(state, ai_id=ai_id)
+            hot_count = sum(1 for heat in all_heat.values() if heat >= 0.5)
+            conn = state._conn
+            total_connections = conn.execute("SELECT COUNT(*) FROM connections").fetchone()[0]
+            established = conn.execute(
+                "SELECT COUNT(*) FROM connections WHERE strength >= 3.0"
+            ).fetchone()[0]
+            return {"ok": True, "stats": {
+                "tick_count": state.get_tick(),
+                "total_memories_tracked": len(all_heat),
+                "hot_memories": hot_count,
+                "total_connections": total_connections,
+                "established_connections": established,
+                "heat_mode": state.get_config("heat_mode", "universal"),
+                "ignored_clis": {
+                    cli_ai: state.get_config(f"heat_ignore_{cli_ai}", "false") == "true"
+                    for cli_ai in DASHBOARD_AI_IDS
+                },
+            }}
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
-    def get_last_retrieval(self):
+    def get_last_retrieval(self, ai_id=None):
         """Get the most recent retrieval snapshot for the dashboard."""
         try:
             cfg = load_config()
-            path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "last_retrieval.json")
-            if not os.path.exists(path):
+            data_dir = cfg.get("data_dir", DEFAULT_DATA_DIR)
+            retrieval = read_json_file(get_last_retrieval_path(data_dir, ai_id=ai_id))
+            if retrieval is None:
                 return {"ok": True, "retrieval": None}
-            with open(path, "r") as f:
-                data = json.load(f)
-            return {"ok": True, "retrieval": data}
+            return {"ok": True, "retrieval": retrieval}
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
-    def get_activity_log(self, limit=20):
+    def get_all_last_retrievals(self):
+        """Get the global and per-AI retrieval snapshots for the dashboard."""
+        try:
+            cfg = load_config()
+            data_dir = cfg.get("data_dir", DEFAULT_DATA_DIR)
+            retrievals = {
+                "all": read_json_file(get_last_retrieval_path(data_dir)),
+            }
+            for ai_id in DASHBOARD_AI_IDS:
+                retrievals[ai_id] = read_json_file(get_last_retrieval_path(data_dir, ai_id=ai_id))
+            return {"ok": True, "retrievals": retrievals}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def get_activity_log(self, limit=20, ai_id=None):
         """Get recent activity log entries for the dashboard feed."""
         try:
             cfg = load_config()
             log_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "activity.jsonl")
             if not os.path.exists(log_path):
                 return {"ok": True, "entries": []}
+            selected_ai = normalize_dashboard_ai_id(ai_id)
+            try:
+                limit = max(1, int(limit))
+            except (TypeError, ValueError):
+                limit = 20
             entries = []
             with open(log_path, "r") as f:
                 lines = f.readlines()
-            for line in reversed(lines[-limit:]):
+            for line in reversed(lines):
                 line = line.strip()
                 if line:
                     try:
-                        entries.append(json.loads(line))
-                    except:
+                        entry = json.loads(line)
+                    except Exception:
                         pass
+                    else:
+                        if selected_ai is not None:
+                            entry_ai = normalize_dashboard_ai_id(entry.get("ai_id"))
+                            session_name = str(entry.get("session") or "").strip().lower()
+                            if entry_ai != selected_ai and not (
+                                session_name == selected_ai
+                                or session_name.startswith(f"{selected_ai}-")
+                                or session_name.startswith(f"{selected_ai}_")
+                            ):
+                                continue
+                        entries.append(entry)
+                        if len(entries) >= limit:
+                            break
             return {"ok": True, "entries": entries}
         except Exception as e:
             return {"ok": False, "entries": [], "msg": str(e)}
 
-    def get_heat_map(self):
+    def get_heat_map(self, ai_id=None):
         """Get all heat values for visualization with metadata."""
         try:
             from ember_memory.core.engine.state import EngineState
@@ -811,7 +894,7 @@ class EmberAPI:
             state = EngineState(db_path=db_path)
             return {
                 "ok": True,
-                "heat": state.get_all_heat(),
+                "heat": get_dashboard_heat(state, ai_id=ai_id),
                 "meta": state.get_all_memory_meta(),
             }
         except Exception as e:
