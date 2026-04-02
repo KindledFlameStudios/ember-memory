@@ -99,10 +99,11 @@ def retrieve(
     1. Get visible collections for this AI (namespace filtering)
     2. Embed the query
     3. Search each visible collection
-    4. Engine re-scores results using heat, connections, and decay (if engine_db_path given)
-    5. Deduplicate overlapping results
-    6. Sort and limit by composite_score
-    7. Record access patterns and co-occurrences in Engine state
+    4. Fuse vector similarity with BM25 keyword ranking via RRF
+    5. Engine re-scores results using heat, connections, and decay (if engine_db_path given)
+    6. Deduplicate overlapping results
+    7. Sort and limit by composite_score
+    8. Record access patterns and co-occurrences in Engine state
 
     When engine_db_path is None, composite_score == similarity (backward compatible).
     Engine is always optional — any failure falls back to similarity-only scoring.
@@ -208,7 +209,70 @@ def retrieve(
             logger.warning(f"Search failed for '{collection_name}': {e}")
             continue
 
-    # 4. Engine re-scoring (optional — only when engine_db_path is provided)
+    # 4. BM25 keyword re-ranking via Reciprocal Rank Fusion.
+    # Threshold filtering already happened above, so keyword fusion only adjusts
+    # ordering for candidate memories that were semantically relevant enough to pass.
+    if len(all_results) > 1:
+        from ember_memory.core.bm25 import BM25, reciprocal_rank_fusion
+
+        bm25 = BM25()
+        bm25.index([r.content for r in all_results])
+        bm25_scores = bm25.score_all(prompt)
+
+        # Only fuse when BM25 contributes a real keyword signal. Without this
+        # guard, all-zero BM25 scores would still impose an arbitrary ranking.
+        if any(score > 0 for score in bm25_scores):
+            vec_ranking = sorted(
+                enumerate(all_results),
+                key=lambda item: item[1].similarity,
+                reverse=True,
+            )
+            vec_ranking = [(idx, result.similarity) for idx, result in vec_ranking]
+
+            bm25_ranking = sorted(
+                enumerate(bm25_scores),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+            bm25_ranking = [(idx, score) for idx, score in bm25_ranking]
+
+            fused = reciprocal_rank_fusion([vec_ranking, bm25_ranking])
+            fused.sort(
+                key=lambda item: (
+                    item[1],
+                    bm25_scores[item[0]],
+                    all_results[item[0]].similarity,
+                ),
+                reverse=True,
+            )
+            max_rrf = fused[0][1] if fused else 0.0
+
+            reordered: list[RetrievalResult] = []
+            total = len(fused)
+            for rank, (doc_idx, rrf_score) in enumerate(fused):
+                result = all_results[doc_idx]
+
+                # Convert the fused order into a normalized score and blend it
+                # into similarity so later composite-score sorting preserves the
+                # hybrid ranking while staying in the [0, 1] range.
+                rank_score = 1.0 if total == 1 else 1.0 - (rank / (total - 1))
+                rrf_score_norm = (rrf_score / max_rrf) if max_rrf > 0 else rank_score
+                fusion_score = (rrf_score_norm * 0.5) + (rank_score * 0.5)
+                hybrid_similarity = (result.similarity * 0.6) + (fusion_score * 0.4)
+
+                result.metadata = {
+                    **result.metadata,
+                    "vector_similarity": result.similarity,
+                    "bm25_score": round(bm25_scores[doc_idx], 4),
+                    "rrf_score": round(rrf_score, 4),
+                }
+                result.similarity = min(max(hybrid_similarity, 0.0), 1.0)
+                result.composite_score = result.similarity
+                reordered.append(result)
+
+            all_results = reordered
+
+    # 5. Engine re-scoring (optional — only when engine_db_path is provided)
     if engine_db_path and all_results:
         engine = _get_engine(engine_db_path)
         if engine is not None:
@@ -251,7 +315,7 @@ def retrieve(
                 logger.warning(f"Engine scoring failed, keeping similarity scores: {e}")
                 # Already defaulted to similarity — nothing to reset
 
-    # 5. Deduplicate — same content from different collections wastes slots.
+    # 6. Deduplicate — same content from different collections wastes slots.
     #    Keep the highest-scoring version of each unique content snippet.
     seen_content: dict[str, int] = {}
     deduped: list[RetrievalResult] = []
@@ -267,11 +331,11 @@ def retrieve(
             seen_content[key] = len(deduped)
             deduped.append(r)
 
-    # 6. Sort by composite score and limit
+    # 7. Sort by composite score and limit
     deduped.sort(key=lambda r: r.composite_score, reverse=True)
     final_results = deduped[:limit]
 
-    # 7. Update Engine state after retrieval (records patterns for future boosts)
+    # 8. Update Engine state after retrieval (records patterns for future boosts)
     if engine_db_path and final_results:
         engine = _get_engine(engine_db_path)
         if engine is not None:
