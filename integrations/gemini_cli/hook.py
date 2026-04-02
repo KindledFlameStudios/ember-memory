@@ -88,7 +88,7 @@ def main():
         context_text = "\n".join(lines).strip()
 
         # Wrap in ember-memory tags
-        tag = os.environ.get("EMBER_CONTEXT_TAG", "ember-memory")
+        tag = config.CONTEXT_TAG
         additional_context = f"<{tag}>\n{context_text}\n</{tag}>"
 
         # Write activity log + per-AI retrieval snapshot

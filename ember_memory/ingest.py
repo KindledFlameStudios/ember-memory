@@ -19,7 +19,8 @@ import hashlib
 from datetime import datetime, timezone
 
 from ember_memory import config
-from ember_memory.backends import get_backend
+from ember_memory.core.backends.loader import get_backend_v2
+from ember_memory.core.embeddings.loader import get_embedding_provider
 
 # Chunk size limits in characters
 MAX_CHUNK = 2000
@@ -86,42 +87,107 @@ def _split_large_chunk(text: str, header: str, source: str) -> list[dict]:
     return results
 
 
-def ingest_file(filepath: str, collection: str, backend, verbose=True) -> int:
-    """Chunk and embed a single file into a collection."""
+def _build_documents(filepath: str, collection: str) -> tuple[str, list[dict]]:
+    """Read a file and convert it into deterministic document records."""
     filename = os.path.basename(filepath)
 
     with open(filepath, 'r', encoding='utf-8') as f:
         text = f.read()
 
     chunks = chunk_markdown(text, filename)
-    if not chunks:
-        if verbose:
-            print(f"  Skipped {filename} — no chunks generated")
-        return 0
-
-    ids = []
-    contents = []
-    metadatas = []
+    ingested_at = datetime.now(timezone.utc).isoformat()
+    documents = []
 
     for chunk in chunks:
         content_hash = hashlib.md5(chunk["content"].encode()).hexdigest()[:12]
-        doc_id = f"{filename}_{content_hash}"
-
-        ids.append(doc_id)
-        contents.append(chunk["content"])
-        metadatas.append({
-            "source_file": filename,
-            "section": chunk["header"],
-            "collection": collection,
-            "ingested_at": datetime.now(timezone.utc).isoformat(),
+        documents.append({
+            "id": f"{filename}_{content_hash}",
+            "content": chunk["content"],
+            "metadata": {
+                "source_file": filename,
+                "section": chunk["header"],
+                "collection": collection,
+                "ingested_at": ingested_at,
+            },
         })
 
-    backend.upsert_batch(ids, contents, metadatas, collection)
+    return filename, documents
+
+
+def _embed_documents(documents: list[dict], embedder, first_embedding: list[float] | None = None) -> list[list[float]]:
+    """Embed all document content before handing vectors to the backend."""
+    if not documents:
+        return []
+
+    if first_embedding is None:
+        return embedder.embed_batch([doc["content"] for doc in documents])
+
+    if len(documents) == 1:
+        return [first_embedding]
+
+    remaining = embedder.embed_batch([doc["content"] for doc in documents[1:]])
+    return [first_embedding, *remaining]
+
+
+def _file_already_ingested(collection: str, filename: str, documents: list[dict], backend, probe_hits: list[dict]) -> bool:
+    """Return True when every current content-hash ID already exists."""
+    if not documents or not probe_hits:
+        return False
+
+    for doc in documents:
+        stored = backend.get(collection, doc["id"])
+        if stored is None:
+            return False
+        if stored.get("metadata", {}).get("source_file") != filename:
+            return False
+
+    return True
+
+
+def ingest_file(filepath: str, collection: str, backend, embedder, sync: bool = False, verbose: bool = True) -> tuple[int, bool]:
+    """Chunk, embed, and store a single file into a collection."""
+    filename, documents = _build_documents(filepath, collection)
+
+    if not documents:
+        if verbose:
+            print(f"  Skipped {filename} — no chunks generated")
+        return 0, False
+
+    first_embedding = None
+    if sync and backend.collection_count(collection) > 0:
+        first_embedding = embedder.embed(documents[0]["content"])
+        probe_hits = backend.search(
+            collection=collection,
+            query_embedding=first_embedding,
+            limit=1,
+            filters={"source_file": filename},
+        )
+        if _file_already_ingested(collection, filename, documents, backend, probe_hits):
+            if verbose:
+                print(f"  {filename} — unchanged, skipping")
+            return 0, True
+
+    embeddings = _embed_documents(documents, embedder, first_embedding=first_embedding)
+    inserted = 0
+    updated = 0
+
+    for doc, embedding in zip(documents, embeddings):
+        if backend.get(collection, doc["id"]) is None:
+            backend.insert(collection, doc["id"], doc["content"], embedding, doc["metadata"])
+            inserted += 1
+        else:
+            backend.update(collection, doc["id"], doc["content"], embedding, doc["metadata"])
+            updated += 1
 
     if verbose:
-        print(f"  {filename} -> {collection}: {len(chunks)} chunks")
+        suffix = ""
+        if inserted and updated:
+            suffix = f" ({inserted} inserted, {updated} refreshed)"
+        elif updated and not inserted:
+            suffix = " (refreshed)"
+        print(f"  {filename} -> {collection}: {len(documents)} chunks{suffix}")
 
-    return len(chunks)
+    return len(documents), False
 
 
 def _collection_from_dir(filepath: str, base_dir: str, default: str) -> str:
@@ -141,18 +207,14 @@ def _collection_from_dir(filepath: str, base_dir: str, default: str) -> str:
 def ingest_directory(directory: str, collection: str | None = None,
                      sync: bool = False, verbose: bool = True) -> None:
     """Ingest all markdown/text files from a directory."""
-    backend = get_backend(
-        backend=config.BACKEND,
-        data_dir=config.DATA_DIR,
-        embedding_provider=config.EMBEDDING_PROVIDER,
-        embedding_model=config.EMBEDDING_MODEL,
-        ollama_url=config.OLLAMA_URL,
-    )
+    backend = get_backend_v2()
+    embedder = get_embedding_provider()
 
     default_collection = collection or config.DEFAULT_COLLECTION
     total_chunks = 0
     total_files = 0
     skipped_files = 0
+    ensured_collections = set()
 
     if verbose:
         print(f"Ingesting from: {directory}")
@@ -170,29 +232,22 @@ def ingest_directory(directory: str, collection: str | None = None,
             filepath = os.path.join(root, filename)
             col_name = collection or _collection_from_dir(filepath, directory, default_collection)
 
-            if sync:
-                # Check if file has changed since last ingestion
-                existing = backend.get_by_metadata(col_name, "source_file", filename)
-                if existing:
-                    file_mtime = datetime.fromtimestamp(
-                        os.path.getmtime(filepath), tz=timezone.utc
-                    )
-                    latest_ingest = max(
-                        (e["metadata"].get("ingested_at", "") for e in existing),
-                        default=""
-                    )
-                    if latest_ingest:
-                        try:
-                            ingest_time = datetime.fromisoformat(latest_ingest)
-                            if file_mtime <= ingest_time:
-                                if verbose:
-                                    print(f"  {filename} — unchanged, skipping")
-                                skipped_files += 1
-                                continue
-                        except (ValueError, TypeError):
-                            pass
+            if col_name not in ensured_collections:
+                backend.create_collection(col_name, dimension=embedder.dimension())
+                ensured_collections.add(col_name)
 
-            count = ingest_file(filepath, col_name, backend, verbose)
+            count, skipped = ingest_file(
+                filepath,
+                col_name,
+                backend,
+                embedder,
+                sync=sync,
+                verbose=verbose,
+            )
+            if skipped:
+                skipped_files += 1
+                continue
+
             total_chunks += count
             total_files += 1
 
@@ -210,13 +265,7 @@ def ingest_directory(directory: str, collection: str | None = None,
 
 def rebuild_collection(collection: str) -> None:
     """Delete and rebuild a collection. Requires source directory as second arg."""
-    backend = get_backend(
-        backend=config.BACKEND,
-        data_dir=config.DATA_DIR,
-        embedding_provider=config.EMBEDDING_PROVIDER,
-        embedding_model=config.EMBEDDING_MODEL,
-        ollama_url=config.OLLAMA_URL,
-    )
+    backend = get_backend_v2()
 
     deleted = backend.delete_collection(collection)
     print(f"Deleted collection '{collection}' ({deleted} entries)")
@@ -225,13 +274,7 @@ def rebuild_collection(collection: str) -> None:
 
 def rebuild_all() -> None:
     """Delete ALL collections. Used after switching embedding models."""
-    backend = get_backend(
-        backend=config.BACKEND,
-        data_dir=config.DATA_DIR,
-        embedding_provider=config.EMBEDDING_PROVIDER,
-        embedding_model=config.EMBEDDING_MODEL,
-        ollama_url=config.OLLAMA_URL,
-    )
+    backend = get_backend_v2()
 
     collections = backend.list_collections()
     if not collections:
