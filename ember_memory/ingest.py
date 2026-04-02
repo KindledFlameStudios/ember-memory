@@ -24,67 +24,120 @@ from ember_memory.core.embeddings.loader import get_embedding_provider
 
 # Chunk size limits in characters
 MAX_CHUNK = 2000
-MIN_CHUNK = 100
+MIN_CHUNK = 50
+MIN_STANDALONE_CHUNK = 20
 
 
-def chunk_markdown(text: str, source_file: str) -> list[dict]:
-    """Split markdown into semantic chunks by headers."""
-    chunks = []
-    sections = re.split(r'^(#{1,3}\s+.+)$', text, flags=re.MULTILINE)
-
-    current_header = source_file
-    current_body = ""
-
-    for part in sections:
-        part = part.strip()
-        if not part:
-            continue
-
-        if re.match(r'^#{1,3}\s+', part):
-            if current_body.strip() and len(current_body.strip()) >= MIN_CHUNK:
-                chunks.extend(_split_large_chunk(current_body.strip(), current_header, source_file))
-            current_header = part.lstrip('#').strip()
-            current_body = ""
-        else:
-            current_body += "\n" + part
-
-    if current_body.strip() and len(current_body.strip()) >= MIN_CHUNK:
-        chunks.extend(_split_large_chunk(current_body.strip(), current_header, source_file))
-
-    return chunks
+def _normalize_chunk(text: str) -> str:
+    """Trim a chunk and collapse excessive blank lines."""
+    cleaned = text.replace('\r\n', '\n').replace('\r', '\n').strip()
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    return cleaned.strip()
 
 
-def _split_large_chunk(text: str, header: str, source: str) -> list[dict]:
-    """Split chunks that exceed MAX_CHUNK by paragraphs."""
-    if len(text) <= MAX_CHUNK:
-        return [{"content": f"[{header}]\n{text}", "header": header, "source": source}]
+def _split_header(section: str) -> tuple[str, str]:
+    """Return the top-level header line and body for a section, if present."""
+    lines = section.split('\n', 1)
+    first_line = lines[0].strip() if lines else ""
+    if re.match(r'^#{1,2}\s+', first_line):
+        body = lines[1].strip() if len(lines) > 1 else ""
+        return first_line, body
+    return "", section.strip()
 
-    paragraphs = re.split(r'\n\n+', text)
+
+def _strip_markdown_chrome(text: str) -> str:
+    """Strip markdown syntax when measuring substantive body text."""
+    plain = re.sub(r'^#{1,6}\s+.*$', '', text, flags=re.MULTILINE)
+    plain = re.sub(r'\*\*[^*]+\*\*:?\s*', '', plain)
+    plain = re.sub(r'^---+$', '', plain, flags=re.MULTILINE)
+    plain = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', plain)
+    plain = re.sub(r'\s+', ' ', plain)
+    return plain.strip()
+
+
+def _actual_text_len(text: str) -> int:
+    return len(_strip_markdown_chrome(text))
+
+
+def _split_oversized_section(section: str, max_chunk: int, min_body: int) -> list[str]:
+    """Split a large section at paragraph boundaries while preserving header context."""
+    section = _normalize_chunk(section)
+    if len(section) <= max_chunk:
+        return [section]
+
+    header_line, body = _split_header(section)
+    paragraphs = [part.strip() for part in re.split(r'\n\n+', body if header_line else section) if part.strip()]
+    if not paragraphs:
+        return [section] if len(section.strip()) >= MIN_STANDALONE_CHUNK else []
+
     results = []
-    current = ""
-    part_num = 1
+    current = header_line if header_line else ""
 
     for para in paragraphs:
-        if len(current) + len(para) > MAX_CHUNK and current:
-            results.append({
-                "content": f"[{header} (part {part_num})]\n{current.strip()}",
-                "header": f"{header} (part {part_num})",
-                "source": source,
-            })
-            part_num += 1
-            current = para
-        else:
-            current += "\n\n" + para if current else para
+        candidate = f"{current}\n\n{para}".strip() if current else para
+        if (
+            len(candidate) > max_chunk
+            and current
+            and _actual_text_len(current) >= min_body
+        ):
+            results.append(_normalize_chunk(current))
+            current = f"{header_line}\n\n{para}".strip() if header_line else para
+            continue
 
-    if current.strip() and len(current.strip()) >= MIN_CHUNK:
-        suffix = f" (part {part_num})" if part_num > 1 else ""
-        results.append({
-            "content": f"[{header}{suffix}]\n{current.strip()}",
-            "header": f"{header}{suffix}",
-            "source": source,
-        })
+        current = candidate
 
-    return results
+    if current.strip():
+        results.append(_normalize_chunk(current))
+
+    return [chunk for chunk in results if len(chunk.strip()) >= MIN_STANDALONE_CHUNK]
+
+
+def chunk_markdown(content: str, max_chunk: int = MAX_CHUNK, min_body: int = MIN_CHUNK) -> list[str]:
+    """Split markdown into meaningful chunks, merging headers with their content."""
+    if not content:
+        return []
+
+    content = _normalize_chunk(content)
+    if len(content) < min_body:
+        return [content] if len(content) >= MIN_STANDALONE_CHUNK else []
+
+    sections = re.split(r'(?=^#{1,2}\s)', content, flags=re.MULTILINE)
+    chunks = []
+    buffer = ""
+
+    for section in sections:
+        section = _normalize_chunk(section)
+        if not section:
+            continue
+
+        _header, body = _split_header(section)
+        body_to_measure = body if body else section
+        if _actual_text_len(body_to_measure) < min_body:
+            buffer = _normalize_chunk(f"{buffer}\n\n{section}" if buffer else section)
+            continue
+
+        if buffer:
+            section = _normalize_chunk(f"{buffer}\n\n{section}")
+            buffer = ""
+
+        chunks.extend(_split_oversized_section(section, max_chunk=max_chunk, min_body=min_body))
+
+    if buffer and len(buffer.strip()) >= MIN_STANDALONE_CHUNK:
+        chunks.extend(_split_oversized_section(buffer, max_chunk=max_chunk, min_body=min_body))
+
+    return [chunk for chunk in chunks if len(chunk.strip()) >= MIN_STANDALONE_CHUNK]
+
+
+def _chunk_section(chunk: str, source_file: str) -> str:
+    """Derive a section label from the first markdown header in a chunk."""
+    for line in chunk.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.match(r'^#{1,6}\s+', stripped):
+            return stripped.lstrip('#').strip()
+        break
+    return source_file
 
 
 def _build_documents(filepath: str, collection: str) -> tuple[str, list[dict]]:
@@ -94,18 +147,18 @@ def _build_documents(filepath: str, collection: str) -> tuple[str, list[dict]]:
     with open(filepath, 'r', encoding='utf-8') as f:
         text = f.read()
 
-    chunks = chunk_markdown(text, filename)
+    chunks = chunk_markdown(text)
     ingested_at = datetime.now(timezone.utc).isoformat()
     documents = []
 
     for chunk in chunks:
-        content_hash = hashlib.md5(chunk["content"].encode()).hexdigest()[:12]
+        content_hash = hashlib.md5(chunk.encode()).hexdigest()[:12]
         documents.append({
             "id": f"{filename}_{content_hash}",
-            "content": chunk["content"],
+            "content": chunk,
             "metadata": {
                 "source_file": filename,
-                "section": chunk["header"],
+                "section": _chunk_section(chunk, filename),
                 "collection": collection,
                 "ingested_at": ingested_at,
             },
