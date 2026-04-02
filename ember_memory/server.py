@@ -89,7 +89,7 @@ def _get_hot_memories(limit: int, ai_id: str) -> tuple[list[dict], list[str]]:
 
     state = EngineState(db_path=db_path)
     heat_map = HeatMap(state)
-    heat_scope = ai_id if heat_map.get_mode() == "per-cli" else None
+    heat_scope = ai_id if heat_map.get_mode() == "per_cli" else None
     ranked_heat = sorted(
         state.get_all_heat(ai_id=heat_scope).items(),
         key=lambda item: item[1],

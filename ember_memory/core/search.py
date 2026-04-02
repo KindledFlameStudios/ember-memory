@@ -1,7 +1,7 @@
 """Unified search layer — coordinates embedding, backend, namespaces, and scoring.
 
 This is the central retrieval function called by every CLI hook.
-The Engine scoring integration point is marked for Plan 3.
+Engine scoring is applied here when an engine DB path is available.
 """
 
 import logging
@@ -76,7 +76,7 @@ class RetrievalResult:
     content: str
     collection: str
     similarity: float
-    composite_score: float  # = similarity for now; Engine overrides in Plan 3
+    composite_score: float  # Defaults to similarity; Engine scoring may override it.
     metadata: dict = field(default_factory=dict)
     score_breakdown: dict = field(default_factory=dict)
 
@@ -85,6 +85,8 @@ def retrieve(
     prompt: str,
     ai_id: str | None = None,
     workspace: str | None = None,
+    cwd: str | None = None,
+    session_id: str | None = None,
     backend: MemoryBackend | None = None,
     embedder: EmbeddingProvider | None = None,
     limit: int = 5,
@@ -98,9 +100,9 @@ def retrieve(
     2. Embed the query
     3. Search each visible collection
     4. Engine re-scores results using heat, connections, and decay (if engine_db_path given)
-    5. Merge, filter by threshold, sort by composite_score
-    6. Record access patterns and co-occurrences in Engine state
-    7. Return top N results
+    5. Deduplicate overlapping results
+    6. Sort and limit by composite_score
+    7. Record access patterns and co-occurrences in Engine state
 
     When engine_db_path is None, composite_score == similarity (backward compatible).
     Engine is always optional — any failure falls back to similarity-only scoring.
@@ -124,12 +126,26 @@ def retrieve(
                 if engine_state.get_config(f"collection_disabled_{name}", "false") != "true"
             ]
 
-    if workspace and engine_db_path:
+    # Workspace filtering: explicit > cwd auto-detect > none
+    effective_workspace = workspace
+    if not effective_workspace and cwd and engine_db_path:
+        # Auto-detect workspace from working directory
         engine = _get_engine(engine_db_path)
         if engine:
             state = engine[0]
             ws_config = state.get_workspace_config()
-            ws = ws_config.get(workspace)
+            for ws_name, ws_def in ws_config.items():
+                ws_cwd = ws_def.get("cwd", "")
+                if ws_cwd and cwd.startswith(ws_cwd):
+                    effective_workspace = ws_name
+                    break
+
+    if effective_workspace and engine_db_path:
+        engine = _get_engine(engine_db_path)
+        if engine:
+            state = engine[0]
+            ws_config = state.get_workspace_config()
+            ws = ws_config.get(effective_workspace)
             if ws and "collections" in ws:
                 ws_enabled = {k for k, v in ws["collections"].items() if v}
                 visible = [v for v in visible if v in ws_enabled]
@@ -208,7 +224,7 @@ def retrieve(
                     if ai_id and heat_map.is_ignored(ai_id):
                         heat_boost = 0.0
                     else:
-                        heat_boost = heat_map.get_boost(result.id, ai_id=ai_id)
+                        heat_boost = heat_map.get_boost(result.id, ai_id=ai_id, session_id=session_id)
 
                     # Connection bonus: other results in this retrieval as context
                     context_ids = [rid for rid in all_ids if rid != result.id]
@@ -255,7 +271,7 @@ def retrieve(
     deduped.sort(key=lambda r: r.composite_score, reverse=True)
     final_results = deduped[:limit]
 
-    # 6. Update Engine state after retrieval (records patterns for future boosts)
+    # 7. Update Engine state after retrieval (records patterns for future boosts)
     if engine_db_path and final_results:
         engine = _get_engine(engine_db_path)
         if engine is not None:
@@ -263,7 +279,7 @@ def retrieve(
             try:
                 # Record access for every returned result
                 for result in final_results:
-                    heat_map.record_access(result.id, ai_id=ai_id)
+                    heat_map.record_access(result.id, ai_id=ai_id, session_id=session_id)
                     engine_state.update_last_accessed(result.id)
                     engine_state.upsert_memory_meta(
                         result.id, result.collection, result.content
@@ -275,7 +291,7 @@ def retrieve(
                     connections.record_co_occurrence(result_ids)
 
                 # Tick decay for this retrieval event
-                heat_map.tick(ai_id=ai_id)
+                heat_map.tick(ai_id=ai_id, session_id=session_id)
                 connections.tick()
                 engine_state.increment_tick()
             except Exception as e:

@@ -101,15 +101,43 @@ def normalize_dashboard_ai_id(ai_id):
     return raw
 
 
+def _get_cli_from_session(session_scope):
+    """Map a session ID back to its parent CLI for dashboard aggregation.
+    cc-12345 -> claude, gemini-98765 -> gemini, codex-555 -> codex"""
+    s = str(session_scope)
+    if s.startswith("cc-") or s.startswith("claude"):
+        return "claude"
+    if s.startswith("gemini"):
+        return "gemini"
+    if s.startswith("codex"):
+        return "codex"
+    return None
+
+
 def get_dashboard_heat(state, ai_id=None):
     selected_ai = normalize_dashboard_ai_id(ai_id)
-    if selected_ai is not None:
-        return state.get_all_heat(ai_id=selected_ai)
+
+    # Get ALL heat entries from the database (all scopes)
+    conn = state._conn
+    rows = conn.execute("SELECT ai_id, memory_id, heat FROM heat_map WHERE heat > 0.01").fetchall()
 
     merged = {}
-    for scope in (None, *DASHBOARD_AI_IDS):
-        for memory_id, heat in state.get_all_heat(ai_id=scope).items():
-            merged[memory_id] = merged.get(memory_id, 0.0) + float(heat)
+    for row in rows:
+        scope = row["ai_id"] if row["ai_id"] else ""
+        mem_id = row["memory_id"]
+        heat = float(row["heat"])
+
+        # Map session IDs to parent CLI for dashboard
+        parent_cli = _get_cli_from_session(scope) if scope else None
+
+        if selected_ai is not None:
+            # Filtered view: only show entries belonging to this CLI
+            if parent_cli == selected_ai or scope == selected_ai:
+                merged[mem_id] = merged.get(mem_id, 0.0) + heat
+        else:
+            # "All" view: aggregate everything
+            merged[mem_id] = merged.get(mem_id, 0.0) + heat
+
     return merged
 
 
@@ -357,7 +385,7 @@ class EmberAPI:
                             "name": "ember-memory",
                             "type": "command",
                             "command": f"{sys.executable} {gemini_hook_path}",
-                            "timeout": 3000
+                            "timeout": 10000
                         }]
                     })
 
@@ -393,8 +421,9 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
-    def save_workspace(self, name, label, collections):
-        """Create or update a workspace. collections is a dict of {col_name: bool}."""
+    def save_workspace(self, name, label, collections, cwd=""):
+        """Create or update a workspace. collections is a dict of {col_name: bool}.
+        cwd is optional — when set, the workspace auto-activates for sessions in that directory."""
         try:
             from ember_memory.core.engine.state import EngineState
             cfg = load_config()
@@ -402,7 +431,12 @@ class EmberAPI:
             os.makedirs(os.path.dirname(db_path), exist_ok=True)
             state = EngineState(db_path=db_path)
             ws_config = state.get_workspace_config()
-            ws_config[name] = {"label": label, "collections": collections}
+            ws_entry = {"label": label, "collections": collections}
+            if cwd:
+                ws_entry["cwd"] = cwd
+            elif name in ws_config and "cwd" in ws_config[name]:
+                ws_entry["cwd"] = ws_config[name]["cwd"]
+            ws_config[name] = ws_entry
             state.save_workspace_config(ws_config)
             return {"ok": True, "msg": f"Workspace '{label}' saved"}
         except Exception as e:
@@ -422,9 +456,46 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
+    def get_launch_dirs(self):
+        """Get configured launch directories for each CLI."""
+        from ember_memory.core.engine.state import EngineState
+        cfg = load_config()
+        db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        state = EngineState(db_path=db_path)
+        home = os.path.expanduser("~")
+        return {
+            "ok": True,
+            "dirs": {
+                "claude": state.get_config("launch_dir_claude", home),
+                "gemini": state.get_config("launch_dir_gemini", home),
+                "codex": state.get_config("launch_dir_codex", home),
+            }
+        }
+
+    def set_launch_dir(self, cli, path):
+        """Set the launch directory for a CLI."""
+        from ember_memory.core.engine.state import EngineState
+        cfg = load_config()
+        db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        state = EngineState(db_path=db_path)
+        state.set_config(f"launch_dir_{cli}", path)
+        return {"ok": True, "msg": f"{cli} launch dir set to {path}"}
+
     def launch_cli(self, cli, workspace=""):
         """Launch a CLI terminal with a specific workspace active."""
+        import shlex
         import subprocess
+
+        # Get configured launch directory
+        from ember_memory.core.engine.state import EngineState
+        cfg = load_config()
+        db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        state = EngineState(db_path=db_path)
+        home_dir = state.get_config(f"launch_dir_{cli}", os.path.expanduser("~"))
+
         commands = {
             "claude": "claude",
             "gemini": "gemini",
@@ -440,28 +511,30 @@ class EmberAPI:
         if workspace:
             env["EMBER_WORKSPACE"] = workspace
         env["EMBER_AI_ID"] = cli if cli != "claude" else "claude"
+        safe_ws = shlex.quote(workspace)
+        safe_dir = shlex.quote(home_dir)
 
         try:
             if platform.system() == "Linux":
                 # Try gnome-terminal, then xterm, then just subprocess
                 if shutil.which("gnome-terminal"):
-                    ws_export = f"export EMBER_WORKSPACE='{workspace}' EMBER_AI_ID='{cli}'; " if workspace else ""
+                    ws_export = f"export EMBER_WORKSPACE={safe_ws} EMBER_AI_ID='{cli}'; " if workspace else ""
                     subprocess.Popen([
                         "gnome-terminal", "--", "bash", "-c",
-                        f"{ws_export}{cmd}; exec bash"
+                        f"cd {safe_dir} && {ws_export}{cmd}; exec bash"
                     ])
                 elif shutil.which("xterm"):
-                    subprocess.Popen(["xterm", "-e", cmd], env=env)
+                    subprocess.Popen(["xterm", "-e", cmd], env=env, cwd=home_dir)
                 else:
-                    subprocess.Popen([cmd], env=env)
+                    subprocess.Popen([cmd], env=env, cwd=home_dir)
             elif platform.system() == "Darwin":
-                ws_export = f"export EMBER_WORKSPACE='{workspace}' EMBER_AI_ID='{cli}' && " if workspace else ""
+                ws_export = f"export EMBER_WORKSPACE={safe_ws} EMBER_AI_ID='{cli}' && " if workspace else ""
                 subprocess.Popen([
                     "osascript", "-e",
-                    f'tell app "Terminal" to do script "{ws_export}{cmd}"'
+                    f'tell app "Terminal" to do script "cd {safe_dir} && {ws_export}{cmd}"'
                 ])
             else:
-                subprocess.Popen([cmd], env=env)
+                subprocess.Popen([cmd], env=env, cwd=home_dir)
 
             label = workspace or "default"
             return {"ok": True, "msg": f"Launched {cli} with workspace '{label}'"}
@@ -479,36 +552,6 @@ class EmberAPI:
             full_name = resolve_collection_name(name, scope)
             backend.create_collection(full_name, dimension=embedder.dimension())
             return {"ok": True, "msg": f"Collection '{full_name}' created"}
-        except Exception as e:
-            return {"ok": False, "msg": str(e)}
-
-    def add_to_collection(self, source_path, collection_name):
-        """Add files from a directory to an existing collection."""
-        try:
-            import subprocess
-            files_added = 0
-            for fname in os.listdir(source_path):
-                fpath = os.path.join(source_path, fname)
-                if os.path.isfile(fpath) and fname.endswith(('.md', '.txt', '.json', '.jsonl')):
-                    files_added += 1
-
-            cmd = [sys.executable, "-m", "ember_memory.ingest", source_path, "--collection", collection_name]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=EMBER_ROOT)
-
-            from ember_memory.core.backends.loader import get_backend_v2
-            backend = get_backend_v2()
-            try:
-                count = backend.collection_count(collection_name)
-            except Exception:
-                count = "?"
-
-            return {
-                "ok": result.returncode == 0,
-                "msg": f"Added files to '{collection_name}' (now {count} chunks)",
-                "collection": collection_name,
-                "files": files_added,
-                "chunks": count,
-            }
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
@@ -616,10 +659,6 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
-    def import_knowledge(self, source_path, collection_name, scope="shared"):
-        """Compatibility wrapper for older UI callers."""
-        return self.import_files(source_path, collection_name, scope)
-
     def get_suggested_queries(self, collection_name):
         """Get suggested first queries for a collection after import."""
         return {
@@ -632,7 +671,7 @@ class EmberAPI:
             ]
         }
 
-    def generate_handoff(self, topic=""):
+    def generate_handoff(self, topic="", ai_id="claude"):
         """Generate a hand-off packet from the controller."""
         try:
             from ember_memory.core.search import retrieve
@@ -650,7 +689,7 @@ class EmberAPI:
             if topic:
                 results = retrieve(
                     prompt=topic,
-                    ai_id="claude",
+                    ai_id=ai_id,
                     backend=backend,
                     embedder=embedder,
                     limit=5,
@@ -680,9 +719,9 @@ class EmberAPI:
     def delete_collection(self, name):
         cfg = load_config()
         try:
-            import chromadb
-            client = chromadb.PersistentClient(path=cfg.get("data_dir", DEFAULT_DATA_DIR))
-            client.delete_collection(name)
+            from ember_memory.core.backends.loader import get_backend_v2
+            backend = get_backend_v2()
+            backend.delete_collection(name)
             return {"ok": True, "msg": f"Collection '{name}' deleted"}
         except Exception as e:
             return {"ok": False, "msg": str(e)}
@@ -909,7 +948,7 @@ class EmberAPI:
             if not os.path.exists(db_path):
                 return {"ok": True, "connections": []}
             state = EngineState(db_path=db_path)
-            conn = state._get_conn()
+            conn = state._conn
             rows = conn.execute(
                 "SELECT id_a, id_b, strength FROM connections WHERE strength > 0.1 ORDER BY strength DESC LIMIT 100"
             ).fetchall()
@@ -1042,6 +1081,49 @@ class EmberAPI:
             path = shutil.which(binary)
             clis[name] = {"installed": path is not None, "path": path or ""}
         return {"ok": True, "clis": clis}
+
+    def test_query(self, query, limit=5):
+        """Run a full Engine-scored retrieval — same path as the hook uses."""
+        try:
+            from ember_memory.core.search import retrieve
+            from ember_memory.core.embeddings.loader import get_embedding_provider
+            from ember_memory.core.backends.loader import get_backend_v2
+            import time
+
+            cfg = load_config()
+            embedder = get_embedding_provider()
+            backend = get_backend_v2()
+            engine_db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+
+            t0 = time.monotonic()
+            results = retrieve(
+                prompt=query,
+                ai_id="claude",
+                backend=backend,
+                embedder=embedder,
+                limit=limit,
+                similarity_threshold=float(cfg.get("similarity_threshold", "0.45")),
+                engine_db_path=engine_db_path if os.path.exists(engine_db_path) else None,
+            )
+            elapsed = int((time.monotonic() - t0) * 1000)
+
+            return {
+                "ok": True,
+                "elapsed_ms": elapsed,
+                "results": [
+                    {
+                        "collection": r.collection,
+                        "content": r.content,
+                        "similarity": round(r.similarity, 4),
+                        "composite_score": round(r.composite_score, 4),
+                        "score_breakdown": r.score_breakdown,
+                        "id": r.id[:32],
+                    }
+                    for r in results
+                ],
+            }
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
 
     def search_collection(self, collection, query, limit=5):
         """Search within a specific collection."""

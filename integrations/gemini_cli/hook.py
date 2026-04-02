@@ -23,6 +23,8 @@ if _package_root not in sys.path:
 
 
 def main():
+    import time
+    _t_start = time.monotonic()
     try:
         raw = sys.stdin.read()
         if not raw.strip():
@@ -43,6 +45,8 @@ def main():
         from ember_memory import config
 
         AI_ID = os.environ.get("EMBER_AI_ID", "gemini")
+        SESSION_ID = f"gemini-{os.getppid()}"
+        WORKSPACE = os.environ.get("EMBER_WORKSPACE", "")
         engine_db_path = os.path.join(config.DATA_DIR, "engine", "engine.db")
         os.makedirs(os.path.dirname(engine_db_path), exist_ok=True)
 
@@ -52,10 +56,13 @@ def main():
         results = retrieve(
             prompt=prompt,
             ai_id=AI_ID,
+            workspace=WORKSPACE,
+            cwd=os.getcwd(),
+            session_id=SESSION_ID,
             backend=backend,
             embedder=embedder,
-            limit=int(os.environ.get("EMBER_MAX_HOOK_RESULTS", "5")),
-            similarity_threshold=float(os.environ.get("EMBER_SIMILARITY_THRESHOLD", "0.35")),
+            limit=config.MAX_HOOK_RESULTS,
+            similarity_threshold=config.SIMILARITY_THRESHOLD,
             engine_db_path=engine_db_path,
         )
 
@@ -72,7 +79,7 @@ def main():
             lines.append(f"[{r.collection}] ({score_pct}% match){tag_str}")
 
             preview = r.content
-            max_chars = int(os.environ.get("EMBER_MAX_PREVIEW_CHARS", "800"))
+            max_chars = config.MAX_PREVIEW_CHARS
             if len(preview) > max_chars:
                 preview = preview[:max_chars] + "..."
             lines.append(preview)
@@ -83,6 +90,53 @@ def main():
         # Wrap in ember-memory tags
         tag = os.environ.get("EMBER_CONTEXT_TAG", "ember-memory")
         additional_context = f"<{tag}>\n{context_text}\n</{tag}>"
+
+        # Write activity log + per-AI retrieval snapshot
+        elapsed_ms = int((time.monotonic() - _t_start) * 1000)
+        try:
+            from datetime import datetime, timezone
+            activity_path = os.path.join(config.DATA_DIR, "activity.jsonl")
+            entry = {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "session": SESSION_ID,
+                "ai_id": AI_ID,
+                "prompt": prompt[:120],
+                "hits": len(results),
+                "top_score": round(results[0].composite_score, 3) if results else 0,
+                "collections": list(set(r.collection for r in results)),
+                "elapsed_ms": elapsed_ms,
+            }
+            os.makedirs(os.path.dirname(activity_path), exist_ok=True)
+            with open(activity_path, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+
+            # Per-AI last retrieval snapshot
+            snapshot = {
+                "ts": entry["ts"],
+                "prompt": prompt[:200],
+                "elapsed_ms": elapsed_ms,
+                "ai_id": AI_ID,
+                "results": [
+                    {
+                        "collection": r.collection,
+                        "content": r.content,
+                        "similarity": round(r.similarity, 4),
+                        "composite_score": round(r.composite_score, 4),
+                        "score_breakdown": getattr(r, 'score_breakdown', {}),
+                        "id": r.id[:32],
+                    }
+                    for r in results
+                ],
+            }
+            # Write global + per-AI
+            for path in [
+                os.path.join(config.DATA_DIR, "last_retrieval.json"),
+                os.path.join(config.DATA_DIR, f"last_retrieval_{AI_ID}.json"),
+            ]:
+                with open(path, "w") as f:
+                    json.dump(snapshot, f, indent=2)
+        except Exception:
+            pass  # Never let logging break the hook
 
         # Output Gemini CLI format
         output = {
