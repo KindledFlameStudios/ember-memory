@@ -421,6 +421,10 @@ html, body {
 .workspace-summary { font-size: 11px; color: var(--fg-muted); }
 .workspace-name-hint { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); margin-bottom: 8px; }
 .workspace-label-input { width: 100%; margin-bottom: 10px; }
+.workspace-cwd-label { font-size: 10px; color: var(--fg-muted); white-space: nowrap; }
+.workspace-cwd-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.workspace-cwd-input { flex: 1; font-family: var(--font-mono); font-size: 10px; background: var(--bg); border: 1px solid var(--border); color: var(--fg-muted); padding: 3px 8px; border-radius: 4px; }
+.workspace-cwd-hint { font-size: 9px; color: var(--fg-muted); margin-top: 2px; font-style: italic; }
 .workspace-empty { margin-bottom: 10px; }
 .workspace-section { margin: 22px 0 18px; }
 .workspace-section-divider { height: 1px; background: var(--border); margin-bottom: 14px; }
@@ -784,6 +788,12 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
             <div class="form-row" style="margin-bottom:8px;">
               <input type="text" class="medium" id="newWorkspaceName" placeholder="workspace-name" />
               <input type="text" class="fluid" id="newWorkspaceLabel" placeholder="Display label" />
+            </div>
+            <div class="workspace-cwd-row">
+              <span class="workspace-cwd-label">Project Directory</span>
+              <input type="text" class="workspace-cwd-input" id="newWorkspaceCwd" placeholder="Optional — auto-activate when working in this directory" readonly />
+              <button type="button" class="btn btn-secondary btn-sm" id="btnWorkspaceBrowseCwd">Browse</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnWorkspaceClearCwd" disabled>Clear</button>
             </div>
             <div class="workspace-cols" id="newWorkspaceCollections"></div>
             <div class="workspace-actions">
@@ -2312,7 +2322,7 @@ function buildOwnerSection(ownerKey, collections, labels, disabledMap) {
         enabledCols[name] = !(disabledMap && disabledMap[name]);
       });
       var wsName = '_quick_' + ownerKey;
-      callApi('save_workspace', wsName, ownerKey, enabledCols).then(function() {
+      callApi('save_workspace', wsName, ownerKey, enabledCols, '').then(function() {
         callApi('launch_cli', def.cli, wsName).then(function(r) {
           if (r && r.ok) showToast(r.msg, 'ok');
           else showToast((r && r.msg) || 'Launch failed', 'err');
@@ -2897,14 +2907,48 @@ function readWorkspaceCollections(container) {
   return collections;
 }
 
+function setWorkspaceCwdState(input, hint, clearBtn) {
+  var value = input ? input.value.trim() : '';
+  if (input) input.title = value;
+  if (hint) hint.style.display = value ? 'block' : 'none';
+  if (clearBtn) clearBtn.disabled = !value;
+}
+
+function readWorkspaceCardState(card, name) {
+  var labelInput = card ? card.querySelector('input[data-role="workspace-label"]') : null;
+  var cols = card ? card.querySelector('[data-role="workspace-cols"]') : null;
+  var cwdInput = card ? card.querySelector('input[data-role="workspace-cwd"]') : null;
+  return {
+    label: labelInput ? labelInput.value.trim() : name,
+    collections: readWorkspaceCollections(cols),
+    cwd: cwdInput ? cwdInput.value.trim() : ''
+  };
+}
+
+function persistWorkspace(name, label, collections, cwd, successMsg) {
+  return callApi('save_workspace', name, label || name, collections, cwd || '').then(function(r) {
+    if (r && r.ok) {
+      showToast(successMsg || r.msg || ('Workspace "' + name + '" saved'), 'ok');
+      loadWorkspaces();
+      return true;
+    }
+    showToast((r && r.msg) || 'Failed to save workspace', 'err');
+    return false;
+  });
+}
+
 function resetWorkspaceForm() {
   var form = document.getElementById('workspaceCreateForm');
   var nameInput = document.getElementById('newWorkspaceName');
   var labelInput = document.getElementById('newWorkspaceLabel');
+  var cwdInput = document.getElementById('newWorkspaceCwd');
+  var cwdClearBtn = document.getElementById('btnWorkspaceClearCwd');
   var cols = document.getElementById('newWorkspaceCollections');
 
   if (nameInput) nameInput.value = '';
   if (labelInput) labelInput.value = '';
+  if (cwdInput) cwdInput.value = '';
+  setWorkspaceCwdState(cwdInput, null, cwdClearBtn);
   if (cols) {
     cols.querySelectorAll('input[type="checkbox"][data-collection-name]').forEach(function(input) {
       input.checked = false;
@@ -2948,6 +2992,43 @@ function renderWorkspaceCard(name, workspace) {
     title.textContent = labelInput.value.trim() || name;
   });
 
+  var cwdRow = document.createElement('div');
+  cwdRow.className = 'workspace-cwd-row';
+
+  var cwdLabel = el('span', 'workspace-cwd-label', 'Auto-detect directory');
+
+  var cwdInput = document.createElement('input');
+  cwdInput.type = 'text';
+  cwdInput.className = 'workspace-cwd-input';
+  cwdInput.readOnly = true;
+  cwdInput.placeholder = 'No directory selected';
+  cwdInput.value = workspace && workspace.cwd ? workspace.cwd : '';
+  cwdInput.setAttribute('data-role', 'workspace-cwd');
+
+  var cwdBrowseBtn = document.createElement('button');
+  cwdBrowseBtn.type = 'button';
+  cwdBrowseBtn.className = 'btn btn-secondary btn-sm';
+  cwdBrowseBtn.textContent = 'Browse';
+  cwdBrowseBtn.addEventListener('click', function() {
+    browseWorkspaceCwd(name);
+  });
+
+  var cwdClearBtn = document.createElement('button');
+  cwdClearBtn.type = 'button';
+  cwdClearBtn.className = 'btn btn-secondary btn-sm';
+  cwdClearBtn.textContent = 'Clear';
+  cwdClearBtn.addEventListener('click', function() {
+    clearWorkspaceCwd(name);
+  });
+
+  cwdRow.appendChild(cwdLabel);
+  cwdRow.appendChild(cwdInput);
+  cwdRow.appendChild(cwdBrowseBtn);
+  cwdRow.appendChild(cwdClearBtn);
+
+  var cwdHint = el('div', 'workspace-cwd-hint', 'Sessions in this directory auto-use this workspace');
+  setWorkspaceCwdState(cwdInput, cwdHint, cwdClearBtn);
+
   var cols = document.createElement('div');
   cols.className = 'workspace-cols';
   cols.setAttribute('data-role', 'workspace-cols');
@@ -2990,6 +3071,8 @@ function renderWorkspaceCard(name, workspace) {
   card.appendChild(title);
   card.appendChild(hint);
   card.appendChild(labelInput);
+  card.appendChild(cwdRow);
+  card.appendChild(cwdHint);
   card.appendChild(cols);
   card.appendChild(actions);
   if (launchRow.childNodes.length) {
@@ -3071,27 +3154,76 @@ function saveWorkspace(name) {
     return;
   }
 
-  var labelInput = card.querySelector('input[data-role="workspace-label"]');
-  var cols = card.querySelector('[data-role="workspace-cols"]');
-  var label = labelInput ? labelInput.value.trim() : '';
-  var collections = readWorkspaceCollections(cols);
+  var state = readWorkspaceCardState(card, name);
+  persistWorkspace(name, state.label || name, state.collections, state.cwd);
+}
 
-  callApi('save_workspace', name, label || name, collections).then(function(r) {
-    if (r && r.ok) {
-      showToast(r.msg || ('Workspace "' + name + '" saved'), 'ok');
-      loadWorkspaces();
-    } else {
-      showToast((r && r.msg) || 'Failed to save workspace', 'err');
+function browseWorkspaceCwd(name) {
+  callApi('browse_directory').then(function(r) {
+    if (!r || !r.ok || !r.path) return;
+    var card = findWorkspaceCard(name);
+    if (!card) {
+      showToast('Workspace not found', 'err');
+      return;
     }
+    var state = readWorkspaceCardState(card, name);
+    persistWorkspace(name, state.label || name, state.collections, r.path, 'Auto-detect directory updated');
+  }).catch(function(err) {
+    showToast(String(err), 'err');
+  });
+}
+
+function clearWorkspaceCwd(name) {
+  var card = findWorkspaceCard(name);
+  if (!card) {
+    showToast('Workspace not found', 'err');
+    return;
+  }
+
+  var state = readWorkspaceCardState(card, name);
+  if (!state.cwd) return;
+
+  var deleted = false;
+  var errorMsg = 'Failed to clear auto-detect directory';
+
+  callApi('delete_workspace', name).then(function(r) {
+    if (!r || !r.ok) {
+      throw new Error((r && r.msg) || errorMsg);
+    }
+    deleted = true;
+    return callApi('save_workspace', name, state.label || name, state.collections, '');
+  }).then(function(r) {
+    if (r && r.ok) {
+      showToast('Auto-detect directory cleared', 'ok');
+      loadWorkspaces();
+      return;
+    }
+    throw new Error((r && r.msg) || errorMsg);
+  }).catch(function(err) {
+    var message = String(err && err.message ? err.message : err);
+    if (!deleted) {
+      showToast(message, 'err');
+      return;
+    }
+    callApi('save_workspace', name, state.label || name, state.collections, state.cwd).then(function(restoreRes) {
+      if (!restoreRes || !restoreRes.ok) {
+        showToast(message + ' Workspace restore failed.', 'err');
+      } else {
+        showToast(message, 'err');
+      }
+      loadWorkspaces();
+    });
   });
 }
 
 function createWorkspace() {
   var nameInput = document.getElementById('newWorkspaceName');
   var labelInput = document.getElementById('newWorkspaceLabel');
+  var cwdInput = document.getElementById('newWorkspaceCwd');
   var cols = document.getElementById('newWorkspaceCollections');
   var name = nameInput ? nameInput.value.trim() : '';
   var label = labelInput ? labelInput.value.trim() : '';
+  var cwd = cwdInput ? cwdInput.value.trim() : '';
 
   if (!name) {
     showToast('Enter a workspace name', 'err');
@@ -3106,7 +3238,7 @@ function createWorkspace() {
     return;
   }
 
-  callApi('save_workspace', name, label || name, readWorkspaceCollections(cols)).then(function(r) {
+  callApi('save_workspace', name, label || name, readWorkspaceCollections(cols), cwd).then(function(r) {
     if (r && r.ok) {
       showToast(r.msg || ('Workspace "' + name + '" created'), 'ok');
       resetWorkspaceForm();
@@ -3141,6 +3273,27 @@ document.getElementById('btnWorkspaceToggle').addEventListener('click', function
 
 document.getElementById('btnWorkspaceCancel').addEventListener('click', function() {
   resetWorkspaceForm();
+});
+
+document.getElementById('btnWorkspaceBrowseCwd').addEventListener('click', function() {
+  callApi('browse_directory').then(function(r) {
+    if (!r || !r.ok || !r.path) return;
+    var input = document.getElementById('newWorkspaceCwd');
+    var clearBtn = document.getElementById('btnWorkspaceClearCwd');
+    if (!input) return;
+    input.value = r.path;
+    setWorkspaceCwdState(input, null, clearBtn);
+  }).catch(function(err) {
+    showToast(String(err), 'err');
+  });
+});
+
+document.getElementById('btnWorkspaceClearCwd').addEventListener('click', function() {
+  var input = document.getElementById('newWorkspaceCwd');
+  var clearBtn = document.getElementById('btnWorkspaceClearCwd');
+  if (!input) return;
+  input.value = '';
+  setWorkspaceCwdState(input, null, clearBtn);
 });
 
 document.getElementById('btnCreateWorkspace').addEventListener('click', function() {
