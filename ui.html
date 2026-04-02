@@ -1489,6 +1489,118 @@ function loadHeatMap() {
   });
 }
 
+function setRetrievalActionButtonState(button, active) {
+  if (button) button.style.opacity = active ? '1' : '0.4';
+}
+
+function createRetrievalActionButton(icon, title, onClick) {
+  var button = document.createElement('button');
+  button.style.cssText = 'background:none; border:none; cursor:pointer; font-size:14px; opacity:0.4; padding:2px 6px;';
+  button.textContent = icon;
+  button.title = title;
+  button.addEventListener('click', function(evt) {
+    evt.preventDefault();
+    evt.stopPropagation();
+    onClick(button);
+  });
+  return button;
+}
+
+function closePinTopicEditor(card) {
+  var existing = card.querySelector('.pin-topic-editor');
+  if (existing && existing.parentNode) {
+    existing.parentNode.removeChild(existing);
+  }
+}
+
+function openPinTopicEditor(card, anchor, result, pinBtn) {
+  var existing = card.querySelector('.pin-topic-editor');
+  if (existing) {
+    var existingInput = existing.querySelector('input');
+    if (existingInput) existingInput.focus();
+    return;
+  }
+
+  var editor = document.createElement('div');
+  editor.className = 'pin-topic-editor';
+  editor.style.cssText = 'display:flex; gap:6px; margin-top:6px; align-items:center; flex-wrap:wrap;';
+
+  var input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Pin for topic';
+  input.style.cssText = 'flex:1; min-width:160px; background:var(--bg-surface); border:1px solid var(--border); color:var(--fg); padding:6px 8px; border-radius:4px; font-size:11px;';
+
+  var confirmBtn = document.createElement('button');
+  confirmBtn.style.cssText = 'background:rgba(255,120,32,0.14); border:1px solid rgba(255,120,32,0.25); color:var(--ember-mid); cursor:pointer; padding:5px 10px; border-radius:4px; font-size:11px;';
+  confirmBtn.textContent = 'Pin';
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.style.cssText = 'background:transparent; border:1px solid var(--border); color:var(--fg-muted); cursor:pointer; padding:5px 10px; border-radius:4px; font-size:11px;';
+  cancelBtn.textContent = 'Cancel';
+
+  function submitPin() {
+    var topic = input.value.trim();
+    if (!topic) {
+      showToast('Enter a topic to pin', 'err');
+      input.focus();
+      return;
+    }
+
+    input.disabled = true;
+    confirmBtn.disabled = true;
+    cancelBtn.disabled = true;
+
+    callApi('pin_memory', result.id, topic, result.collection).then(function(r) {
+      input.disabled = false;
+      confirmBtn.disabled = false;
+      cancelBtn.disabled = false;
+
+      if (r && r.ok) {
+        setRetrievalActionButtonState(pinBtn, true);
+        closePinTopicEditor(card);
+        showToast(r.msg || 'Pinned', 'ok');
+      } else {
+        showToast((r && r.msg) || 'Pin failed', 'err');
+        input.focus();
+      }
+    });
+  }
+
+  confirmBtn.addEventListener('click', function(evt) {
+    evt.preventDefault();
+    evt.stopPropagation();
+    submitPin();
+  });
+
+  cancelBtn.addEventListener('click', function(evt) {
+    evt.preventDefault();
+    evt.stopPropagation();
+    closePinTopicEditor(card);
+  });
+
+  input.addEventListener('keydown', function(evt) {
+    if (evt.key === 'Enter') {
+      evt.preventDefault();
+      submitPin();
+    } else if (evt.key === 'Escape') {
+      evt.preventDefault();
+      closePinTopicEditor(card);
+    }
+  });
+
+  editor.appendChild(input);
+  editor.appendChild(confirmBtn);
+  editor.appendChild(cancelBtn);
+
+  if (anchor && anchor.parentNode === card && anchor.nextSibling) {
+    card.insertBefore(editor, anchor.nextSibling);
+  } else {
+    card.appendChild(editor);
+  }
+
+  input.focus();
+}
+
 // Last Retrieval panel
 function loadLastRetrieval() {
   var area = document.getElementById('lastRetrievalArea');
@@ -1583,6 +1695,40 @@ function loadLastRetrieval() {
         xrayBar.appendChild(seg);
       });
       card.appendChild(xrayBar);
+
+      var feedbackRow = document.createElement('div');
+      feedbackRow.style.cssText = 'display:flex; gap:8px; margin-top:4px;';
+
+      var thumbUp = createRetrievalActionButton('\uD83D\uDC4D', 'This was helpful', function(button) {
+        callApi('rate_memory', result.id, 1).then(function(r) {
+          if (r && r.ok) {
+            setRetrievalActionButtonState(button, true);
+            showToast('Boosted', 'ok');
+          } else {
+            showToast((r && r.msg) || 'Rating failed', 'err');
+          }
+        });
+      });
+
+      var thumbDown = createRetrievalActionButton('\uD83D\uDC4E', 'Not relevant', function(button) {
+        callApi('rate_memory', result.id, -1).then(function(r) {
+          if (r && r.ok) {
+            setRetrievalActionButtonState(button, true);
+            showToast('Deprioritized', 'ok');
+          } else {
+            showToast((r && r.msg) || 'Rating failed', 'err');
+          }
+        });
+      });
+
+      var pinBtn = createRetrievalActionButton('\uD83D\uDCCC', 'Pin this memory for a topic', function(button) {
+        openPinTopicEditor(card, feedbackRow, result, button);
+      });
+
+      feedbackRow.appendChild(thumbUp);
+      feedbackRow.appendChild(thumbDown);
+      feedbackRow.appendChild(pinBtn);
+      card.appendChild(feedbackRow);
 
       var xrayLegend = document.createElement('div');
       xrayLegend.className = 'xray-legend';

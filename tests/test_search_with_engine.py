@@ -4,8 +4,9 @@ Uses a real EngineState (SQLite in tmp_path) and a mock backend/embedder
 so tests are fast and hermetic -- no ChromaDB, no Ollama required.
 """
 
-import pytest
+import json
 import os
+import pytest
 from unittest.mock import MagicMock
 from ember_memory.core.search import retrieve, RetrievalResult, _engine_cache
 from ember_memory.core.engine.state import EngineState
@@ -206,3 +207,60 @@ def test_engine_tick_increments_on_each_retrieval(engine_dir):
 
     state = EngineState(db_path=db_path)
     assert state.get_tick() == 2
+
+
+def test_feedback_adjustment_can_reorder_results(engine_dir):
+    """Stored user feedback should boost a memory's future ranking."""
+    db_path = os.path.join(engine_dir, "engine.db")
+    state = EngineState(db_path=db_path)
+    state.set_config("feedback_boosted_doc", "1")
+
+    backend = _mock_backend(["notes"], [
+        {"id": "higher_sim", "content": "high sim", "metadata": {}, "similarity": 0.71},
+        {"id": "boosted_doc", "content": "boost me", "metadata": {}, "similarity": 0.62},
+    ])
+
+    results = retrieve(
+        "query",
+        ai_id="claude",
+        backend=backend,
+        embedder=_mock_embedder(),
+        engine_db_path=db_path,
+    )
+
+    assert len(results) == 2
+    assert results[0].id == "boosted_doc"
+    assert results[0].composite_score > results[1].composite_score
+    assert results[0].score_breakdown["feedback_adjustment"] == pytest.approx(0.05)
+
+
+def test_pinned_memory_injects_when_trigger_matches(engine_dir):
+    """Pinned memories should surface even when regular retrieval has no hits."""
+    db_path = os.path.join(engine_dir, "engine.db")
+    state = EngineState(db_path=db_path)
+    state.set_config(
+        "pinned_memories",
+        json.dumps([
+            {"memory_id": "pin-doc", "trigger": "coffee", "collection": "notes"}
+        ]),
+    )
+
+    backend = _mock_backend(["notes"], [])
+    backend.get.return_value = {
+        "id": "pin-doc",
+        "content": "Always mention the coffee preference.",
+        "metadata": {"source": "prefs"},
+    }
+
+    results = retrieve(
+        "Need the coffee details for this handoff",
+        ai_id="claude",
+        backend=backend,
+        embedder=_mock_embedder(),
+        engine_db_path=db_path,
+    )
+
+    assert len(results) == 1
+    assert results[0].id == "pin-doc"
+    assert results[0].score_breakdown["pinned"] is True
+    backend.get.assert_called_once_with("notes", "pin-doc")

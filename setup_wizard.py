@@ -156,6 +156,43 @@ def read_json_file(path):
         return json.load(f)
 
 
+def get_engine_db_path():
+    cfg = load_config()
+    return os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+
+
+def get_engine_state(create=True):
+    from ember_memory.core.engine.state import EngineState
+
+    db_path = get_engine_db_path()
+    if create:
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    return EngineState(db_path=db_path)
+
+
+def resolve_memory_id(state, memory_id):
+    """Resolve a memory ID or unique prefix to the stored full ID."""
+    raw_id = str(memory_id or "").strip()
+    if not raw_id:
+        return raw_id
+
+    row = state._conn.execute(
+        "SELECT memory_id FROM memory_meta WHERE memory_id = ?",
+        (raw_id,),
+    ).fetchone()
+    if row:
+        return row["memory_id"]
+
+    rows = state._conn.execute(
+        "SELECT memory_id FROM memory_meta WHERE memory_id LIKE ? ORDER BY memory_id LIMIT 2",
+        (raw_id + "%",),
+    ).fetchall()
+    if len(rows) == 1:
+        return rows[0]["memory_id"]
+
+    return raw_id
+
+
 # ── API Backend (exposed to JS via pywebview) ────────────────────────────────
 
 class EmberAPI:
@@ -882,6 +919,65 @@ class EmberAPI:
             return {"ok": True, "retrievals": retrievals}
         except Exception as e:
             return {"ok": False, "msg": str(e)}
+
+    def rate_memory(self, memory_id, rating):
+        """Rate a retrieved memory as helpful (1) or unhelpful (-1)."""
+        try:
+            state = get_engine_state(create=True)
+            resolved_id = resolve_memory_id(state, memory_id)
+            key = f"feedback_{resolved_id}"
+            current = float(state.get_config(key, "0"))
+            new_val = current + float(rating)
+            state.set_config(key, str(new_val))
+            return {"ok": True, "feedback": new_val, "memory_id": resolved_id}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def pin_memory(self, memory_id, trigger_topic, collection=""):
+        """Pin a memory to always surface for a trigger topic."""
+        try:
+            state = get_engine_state(create=True)
+            resolved_id = resolve_memory_id(state, memory_id)
+            pins_raw = state.get_config("pinned_memories", "[]")
+            pins = json.loads(pins_raw)
+            entry = {
+                "memory_id": resolved_id,
+                "trigger": str(trigger_topic or "").strip().lower(),
+                "collection": str(collection or "").strip(),
+            }
+            if not entry["trigger"]:
+                return {"ok": False, "msg": "Pin topic is required"}
+            if entry not in pins:
+                pins.append(entry)
+            state.set_config("pinned_memories", json.dumps(pins))
+            return {"ok": True, "msg": f"Pinned for topic: {trigger_topic}", "memory_id": resolved_id}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def unpin_memory(self, memory_id):
+        """Remove a pin from a memory."""
+        try:
+            state = get_engine_state(create=True)
+            resolved_id = resolve_memory_id(state, memory_id)
+            pins_raw = state.get_config("pinned_memories", "[]")
+            pins = json.loads(pins_raw)
+            pins = [p for p in pins if p.get("memory_id") != resolved_id]
+            state.set_config("pinned_memories", json.dumps(pins))
+            return {"ok": True, "msg": "Unpinned", "memory_id": resolved_id}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def get_pins(self):
+        """Get all pinned memories."""
+        try:
+            db_path = get_engine_db_path()
+            if not os.path.exists(db_path):
+                return {"ok": True, "pins": []}
+            state = get_engine_state(create=False)
+            pins = json.loads(state.get_config("pinned_memories", "[]"))
+            return {"ok": True, "pins": pins}
+        except Exception as e:
+            return {"ok": False, "pins": [], "msg": str(e)}
 
     def get_activity_log(self, limit=20, ai_id=None):
         """Get recent activity log entries for the dashboard feed."""

@@ -4,6 +4,7 @@ This is the central retrieval function called by every CLI hook.
 Engine scoring is applied here when an engine DB path is available.
 """
 
+import json
 import logging
 import os
 import re
@@ -315,6 +316,24 @@ def retrieve(
                 logger.warning(f"Engine scoring failed, keeping similarity scores: {e}")
                 # Already defaulted to similarity — nothing to reset
 
+    # Apply user feedback adjustments after Engine scoring and before the
+    # final sort/dedup pass so explicit ratings can influence future ranking.
+    if engine_db_path and all_results:
+        engine = _get_engine(engine_db_path)
+        if engine is not None:
+            state = engine[0]
+            for result in all_results:
+                try:
+                    feedback = float(state.get_config(f"feedback_{result.id}", "0"))
+                except (TypeError, ValueError):
+                    feedback = 0.0
+                if feedback != 0:
+                    adjustment = feedback * 0.05
+                    result.composite_score = max(0.0, result.composite_score + adjustment)
+                    if result.score_breakdown:
+                        result.score_breakdown["feedback_adjustment"] = round(adjustment, 4)
+                        result.score_breakdown["composite_score"] = round(result.composite_score, 4)
+
     # 6. Deduplicate — same content from different collections wastes slots.
     #    Keep the highest-scoring version of each unique content snippet.
     seen_content: dict[str, int] = {}
@@ -334,6 +353,50 @@ def retrieve(
     # 7. Sort by composite score and limit
     deduped.sort(key=lambda r: r.composite_score, reverse=True)
     final_results = deduped[:limit]
+
+    # Inject pinned memories that match the query so they always surface when
+    # the user mentions the configured trigger topic.
+    if engine_db_path:
+        engine = _get_engine(engine_db_path)
+        if engine is not None:
+            state = engine[0]
+            prompt_lower = prompt.lower()
+            try:
+                pins = json.loads(state.get_config("pinned_memories", "[]"))
+            except Exception:
+                pins = []
+
+            pinned_results: list[RetrievalResult] = []
+            for pin in pins:
+                trigger = str(pin.get("trigger", "")).strip().lower()
+                pin_id = str(pin.get("memory_id", "")).strip()
+                collection = str(pin.get("collection", "")).strip()
+                if not trigger or trigger not in prompt_lower or not pin_id or not collection:
+                    continue
+                if any(r.id == pin_id for r in final_results) or any(r.id == pin_id for r in pinned_results):
+                    continue
+
+                try:
+                    doc = backend.get(collection, pin_id)
+                except Exception:
+                    doc = None
+                if not doc:
+                    continue
+
+                pinned_results.append(
+                    RetrievalResult(
+                        id=doc["id"],
+                        content=doc.get("content", ""),
+                        collection=collection,
+                        similarity=1.0,
+                        composite_score=1.0,
+                        metadata=doc.get("metadata", {}),
+                        score_breakdown={"pinned": True, "trigger": trigger, "composite_score": 1.0},
+                    )
+                )
+
+            if pinned_results:
+                final_results = pinned_results + final_results
 
     # 8. Update Engine state after retrieval (records patterns for future boosts)
     if engine_db_path and final_results:
