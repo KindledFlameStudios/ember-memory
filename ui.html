@@ -352,6 +352,18 @@ html, body {
 .import-file-remove { background: none; border: none; color: var(--fg-muted); cursor: pointer; font-size: 14px; padding: 0 4px; }
 .import-file-remove:hover { color: var(--error); }
 .import-pick-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.import-mode-switch { display: flex; gap: 8px; margin-bottom: 14px; }
+.import-mode-btn {
+  background: transparent; border: 1px solid var(--border); border-radius: 999px;
+  color: var(--fg-muted); cursor: pointer; font-size: 11px; font-weight: 600;
+  padding: 6px 12px; transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.import-mode-btn:hover { border-color: var(--border-em); color: var(--fg-dim); }
+.import-mode-btn.active {
+  background: rgba(255,120,32,0.12); border-color: rgba(255,120,32,0.28); color: var(--ember-glow);
+}
+.import-mode-panel { display: none; }
+.import-mode-panel.active { display: block; }
 .import-query-prompt { font-size: 11px; color: var(--fg-dim); margin-top: 12px; margin-bottom: 8px; line-height: 1.5; }
 .import-query-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .import-query-btn {
@@ -699,46 +711,77 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
       <div class="section-hdr">
         <span class="section-title">Collections</span>
         <div class="section-actions">
-          <button class="btn btn-primary btn-sm" id="btnImportToggle">Add Collection</button>
+          <button class="btn btn-primary btn-sm" id="btnCreateToggle">+ New Collection</button>
+          <button class="btn btn-secondary btn-sm" id="btnImportToggle">Import Knowledge</button>
         </div>
       </div>
 
       <!-- Quick launch moved to per-owner sections -->
 
-      <div class="import-wizard" id="importWizard">
-        <div class="import-wizard-title">Add Collection</div>
-        <div class="import-wizard-sub">Create a collection once, then optionally bring knowledge in with it.</div>
-
-        <div class="import-step">
-          <div class="import-step-label">1. Name &amp; Scope</div>
-          <div class="form-row" style="margin-bottom:8px;">
-            <input type="text" class="fluid" id="importCollectionName" placeholder="collection-name" />
-          </div>
-          <div class="form-row">
-            <select id="importScope">
-              <option value="shared">Shared</option>
-              <option value="claude">Claude</option>
-              <option value="gemini">Gemini</option>
-              <option value="codex">Codex</option>
-            </select>
-          </div>
+      <div class="create-form" id="createForm">
+        <div class="form-row">
+          <input type="text" class="fluid" id="newColName" placeholder="Topic name" />
+          <select id="newColScope">
+            <option value="shared">Shared</option>
+            <option value="claude">Claude</option>
+            <option value="gemini">Gemini</option>
+            <option value="codex">Codex</option>
+          </select>
+          <button class="btn btn-primary btn-sm" id="btnCreateCol">Create</button>
+          <button class="btn btn-secondary btn-sm" id="btnCreateCancel">Cancel</button>
         </div>
+      </div>
+
+      <div class="import-wizard" id="importWizard">
+        <div class="import-wizard-title">Import Knowledge</div>
+        <div class="import-wizard-sub">Import files into an existing collection or create a new one while you import.</div>
 
         <div class="import-step">
-          <div class="import-step-label">2. Add Content</div>
+          <div class="import-step-label">1. Add content</div>
           <div class="import-pick-row">
             <button class="btn btn-secondary btn-sm" id="btnImportBrowseFiles">Select Files</button>
             <button class="btn btn-secondary btn-sm" id="btnImportBrowseFolder">Select Folder</button>
           </div>
-          <div class="import-step-note">Optional — you can add files now or later.</div>
           <div class="import-file-list" id="importFileList"></div>
           <div class="import-supported">Supports .md, .txt, .json, and .jsonl files.</div>
         </div>
 
         <div class="import-step">
-          <div class="import-step-label">3. Create</div>
+          <div class="import-step-label">2. Choose mode</div>
+          <div class="import-mode-switch">
+            <button type="button" class="import-mode-btn active" id="btnImportModeExisting">Add to Existing</button>
+            <button type="button" class="import-mode-btn" id="btnImportModeNew">Create New</button>
+          </div>
+        </div>
+
+        <div class="import-mode-panel active" id="importModeExisting">
+          <div class="import-step">
+            <div class="import-step-label">3. Select collection</div>
+            <select id="importCollectionSelect"></select>
+          </div>
+        </div>
+
+        <div class="import-mode-panel" id="importModeNew">
+          <div class="import-step">
+            <div class="import-step-label">3. New topic name</div>
+            <div class="form-row" style="margin-bottom:8px;">
+              <input type="text" class="fluid" id="importCollectionName" placeholder="Seren's Identity" />
+            </div>
+            <div class="form-row">
+              <select id="importScope">
+                <option value="shared">Shared</option>
+                <option value="claude">Claude</option>
+                <option value="gemini">Gemini</option>
+                <option value="codex">Codex</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="import-step">
+          <div class="import-step-label">4. Import</div>
           <div class="import-action-row">
-            <button class="btn btn-primary" id="btnRunImport">Create Collection</button>
+            <button class="btn btn-primary" id="btnRunImport">Import</button>
           </div>
           <div class="import-supported" id="importProgressText"></div>
         </div>
@@ -2569,10 +2612,31 @@ function setImportProgress(message) {
   progress.textContent = message || '';
 }
 
+var IMPORT_MODE_EXISTING = 'existing';
+var IMPORT_MODE_NEW = 'new';
 var importSelectedItems = [];
+var currentImportMode = IMPORT_MODE_EXISTING;
 
 function sanitizeCollectionName(raw) {
   return raw.toLowerCase().replace(/[^a-z0-9._-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'collection';
+}
+
+function buildScopedCollectionName(name, scope) {
+  var resolvedScope = scope || 'shared';
+  return resolvedScope === 'shared' ? name : (resolvedScope + '--' + name);
+}
+
+function maybeSaveCollectionLabel(fullName, displayName, internalName) {
+  var label = String(displayName || '').trim();
+  var internal = String(internalName || '').trim();
+  if (!label || label === internal) {
+    return Promise.resolve({ ok: true, skipped: true });
+  }
+  return callApi('rename_collection_label', fullName, label).then(function(r) {
+    return r || { ok: false, msg: 'Failed to save display label' };
+  }).catch(function(err) {
+    return { ok: false, msg: String(err) };
+  });
 }
 
 function getImportPathBaseName(path) {
@@ -2582,9 +2646,62 @@ function getImportPathBaseName(path) {
   return parts[parts.length - 1] || cleaned;
 }
 
+function focusNewCollectionForm() {
+  var nameInput = document.getElementById('newColName');
+  if (nameInput) nameInput.focus();
+}
+
 function focusImportWizard() {
+  if (currentImportMode === IMPORT_MODE_EXISTING) {
+    var select = document.getElementById('importCollectionSelect');
+    if (select && !select.disabled) {
+      select.focus();
+      return;
+    }
+  }
   var nameInput = document.getElementById('importCollectionName');
   if (nameInput) nameInput.focus();
+}
+
+function buildCollectionDraft(nameInputId, scopeSelectId) {
+  var nameInput = document.getElementById(nameInputId);
+  var scopeSelect = document.getElementById(scopeSelectId);
+  var rawName = nameInput ? nameInput.value.trim() : '';
+  if (!rawName) return { ok: false, msg: 'Enter a collection name' };
+  return {
+    ok: true,
+    name: sanitizeCollectionName(rawName),
+    displayName: rawName,
+    scope: scopeSelect ? (scopeSelect.value || 'shared') : 'shared'
+  };
+}
+
+function resetCreateForm() {
+  var form = document.getElementById('createForm');
+  var nameInput = document.getElementById('newColName');
+  var scopeSelect = document.getElementById('newColScope');
+  if (form) form.classList.remove('visible');
+  if (nameInput) nameInput.value = '';
+  if (scopeSelect) scopeSelect.value = 'shared';
+}
+
+function setImportMode(mode) {
+  currentImportMode = mode === IMPORT_MODE_NEW ? IMPORT_MODE_NEW : IMPORT_MODE_EXISTING;
+
+  var existingBtn = document.getElementById('btnImportModeExisting');
+  var newBtn = document.getElementById('btnImportModeNew');
+  var existingPanel = document.getElementById('importModeExisting');
+  var newPanel = document.getElementById('importModeNew');
+
+  if (existingBtn) existingBtn.classList.toggle('active', currentImportMode === IMPORT_MODE_EXISTING);
+  if (newBtn) newBtn.classList.toggle('active', currentImportMode === IMPORT_MODE_NEW);
+  if (existingPanel) existingPanel.classList.toggle('active', currentImportMode === IMPORT_MODE_EXISTING);
+  if (newPanel) newPanel.classList.toggle('active', currentImportMode === IMPORT_MODE_NEW);
+
+  if (currentImportMode === IMPORT_MODE_NEW) {
+    maybeFillImportCollectionName(false);
+  }
+  updateImportSubmitButton();
 }
 
 function suggestImportCollectionName() {
@@ -2600,6 +2717,7 @@ function suggestImportCollectionName() {
 function maybeFillImportCollectionName(force) {
   var input = document.getElementById('importCollectionName');
   if (!input) return;
+  if (currentImportMode !== IMPORT_MODE_NEW) return;
   if (force || !input.value.trim()) {
     input.value = suggestImportCollectionName();
   }
@@ -2607,8 +2725,8 @@ function maybeFillImportCollectionName(force) {
 
 function updateImportSubmitButton() {
   var btn = document.getElementById('btnRunImport');
-  if (!btn || btn.disabled) return;
-  btn.textContent = importSelectedItems.length ? 'Create & Import' : 'Create Collection';
+  if (!btn) return;
+  btn.textContent = currentImportMode === IMPORT_MODE_NEW ? 'Create & Import' : 'Import';
 }
 
 function renderImportFileList() {
@@ -2619,7 +2737,7 @@ function renderImportFileList() {
   if (!importSelectedItems.length) {
     var empty = document.createElement('div');
     empty.className = 'import-supported';
-    empty.textContent = 'No files selected. You can create the collection now and add content later.';
+    empty.textContent = 'No files selected yet.';
     list.appendChild(empty);
     updateImportSubmitButton();
     return;
@@ -2673,6 +2791,124 @@ function addImportSelections(paths, kind) {
   }
 }
 
+function getImportCollectionLabel(rawName, labels) {
+  var parsed = parseOwner(String(rawName || ''));
+  var saved = labels && Object.prototype.hasOwnProperty.call(labels, rawName) ? labels[rawName] : '';
+  return saved || parsed.topic || rawName;
+}
+
+function refreshImportCollections(selectedName) {
+  var select = document.getElementById('importCollectionSelect');
+  if (!select) return Promise.resolve();
+
+  var preferred = selectedName || select.value || '';
+  select.disabled = true;
+  select.textContent = '';
+
+  var loadingOption = document.createElement('option');
+  loadingOption.value = '';
+  loadingOption.textContent = 'Loading collections...';
+  select.appendChild(loadingOption);
+
+  return Promise.all([
+    callApi('get_collections'),
+    callApi('get_collection_labels')
+  ]).then(function(results) {
+    var collectionsRes = results[0];
+    var labelsRes = results[1];
+    var labels = labelsRes && labelsRes.ok && labelsRes.labels ? labelsRes.labels : {};
+    var hasSelected = false;
+    var totalCollections = 0;
+
+    select.textContent = '';
+
+    if (collectionsRes && collectionsRes.ok && collectionsRes.collections && collectionsRes.collections.length) {
+      var placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Choose a collection';
+      placeholder.selected = !preferred;
+      select.appendChild(placeholder);
+
+      var groups = { claude: [], gemini: [], codex: [], shared: [] };
+      collectionsRes.collections.forEach(function(col) {
+        var rawName = String(col.name || '');
+        var parsed = parseOwner(rawName);
+        if (!groups[parsed.owner]) groups[parsed.owner] = [];
+        groups[parsed.owner].push({
+          rawName: rawName,
+          topic: parsed.topic,
+          count: col.count,
+          displayName: getImportCollectionLabel(rawName, labels),
+          owner: parsed.owner
+        });
+      });
+
+      ['claude', 'gemini', 'codex', 'shared'].forEach(function(owner) {
+        var entries = groups[owner];
+        if (!entries || !entries.length) return;
+
+        totalCollections += entries.length;
+
+        var group = document.createElement('optgroup');
+        group.label = ownerLabels[owner] || owner;
+
+        entries.forEach(function(entry) {
+          var option = document.createElement('option');
+          option.value = entry.rawName;
+          option.textContent = entry.displayName + ' (' + String(entry.count || 0) + ' chunks)';
+          option.setAttribute('data-display-name', entry.displayName);
+          option.setAttribute('data-scope', entry.owner);
+          option.setAttribute('data-topic', entry.topic);
+          if (entry.rawName === preferred) {
+            option.selected = true;
+            hasSelected = true;
+          }
+          group.appendChild(option);
+        });
+
+        select.appendChild(group);
+      });
+
+      if (!hasSelected) {
+        placeholder.selected = true;
+      }
+    } else {
+      var emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.textContent = 'No collections available';
+      emptyOption.selected = true;
+      select.appendChild(emptyOption);
+    }
+
+    select.disabled = false;
+    if (!totalCollections && currentImportMode === IMPORT_MODE_EXISTING) {
+      setImportMode(IMPORT_MODE_NEW);
+    }
+  }).catch(function(err) {
+    select.textContent = '';
+    var emptyOption = document.createElement('option');
+    emptyOption.value = '';
+    emptyOption.textContent = 'Unable to load collections';
+    emptyOption.selected = true;
+    select.appendChild(emptyOption);
+    select.disabled = false;
+    showToast(String(err), 'err');
+  });
+}
+
+function readImportExistingSelection() {
+  var select = document.getElementById('importCollectionSelect');
+  if (!select) return { ok: false, msg: 'Choose a collection' };
+  var option = select.options[select.selectedIndex];
+  var rawName = option ? String(option.value || '').trim() : '';
+  if (!rawName) return { ok: false, msg: 'Choose a collection' };
+  return {
+    ok: true,
+    fullName: rawName,
+    displayName: option.getAttribute('data-display-name') || getCollectionDisplayName(rawName)
+  };
+}
+
 function buildImportQueryList(collectionName) {
   return [
     'What do we know about ' + collectionName + '?',
@@ -2697,7 +2933,7 @@ function buildImportQueryButton(query) {
   return button;
 }
 
-function renderImportSuccess(result) {
+function renderImportSuccess(result, titleText, displayCollectionName) {
   var host = document.getElementById('importSuccessHost');
   if (!host) return;
   host.textContent = '';
@@ -2707,7 +2943,7 @@ function renderImportSuccess(result) {
 
   var title = document.createElement('div');
   title.className = 'import-success-title';
-  title.textContent = 'Collection created and imported';
+  title.textContent = titleText || 'Import complete';
 
   var files = document.createElement('div');
   files.className = 'import-success-stat';
@@ -2719,7 +2955,7 @@ function renderImportSuccess(result) {
 
   var collection = document.createElement('div');
   collection.className = 'import-success-stat';
-  collection.textContent = 'Collection: ' + String(result.collection || 'unknown');
+  collection.textContent = 'Collection: ' + String(displayCollectionName || getCollectionDisplayName(result.collection || '') || 'unknown');
 
   card.appendChild(title);
   card.appendChild(files);
@@ -2733,7 +2969,7 @@ function renderImportSuccess(result) {
 
   var queries = document.createElement('div');
   queries.className = 'import-query-list';
-  var queryCollection = getCollectionDisplayName(result.collection || '');
+  var queryCollection = String(displayCollectionName || getCollectionDisplayName(result.collection || '') || 'this collection');
   buildImportQueryList(queryCollection).forEach(function(query) {
     queries.appendChild(buildImportQueryButton(query));
   });
@@ -2751,21 +2987,12 @@ function resetImportSelections() {
 function clearImportWizardInputs() {
   var nameInput = document.getElementById('importCollectionName');
   var scopeSelect = document.getElementById('importScope');
+  var select = document.getElementById('importCollectionSelect');
   if (nameInput) nameInput.value = '';
   if (scopeSelect) scopeSelect.value = 'shared';
+  if (select) select.value = '';
   resetImportSelections();
-}
-
-function readImportDraft() {
-  var nameInput = document.getElementById('importCollectionName');
-  var scopeSelect = document.getElementById('importScope');
-  var rawName = nameInput ? nameInput.value.trim() : '';
-  if (!rawName) return { ok: false, msg: 'Enter a collection name' };
-  return {
-    ok: true,
-    name: sanitizeCollectionName(rawName),
-    scope: scopeSelect ? (scopeSelect.value || 'shared') : 'shared'
-  };
+  setImportMode(IMPORT_MODE_EXISTING);
 }
 
 function importFilesIntoExistingCollection(col, button, label) {
@@ -2784,6 +3011,9 @@ function importFilesIntoExistingCollection(col, button, label) {
       if (importResult && importResult.ok) {
         showToast((importResult.msg) || ('Added files to ' + label), 'ok');
         loadCollections();
+        if (document.getElementById('importWizard').classList.contains('visible')) {
+          refreshImportCollections(col.name);
+        }
         return;
       }
       showToast((importResult && importResult.msg) || 'Import failed', 'err');
@@ -2798,14 +3028,74 @@ function importFilesIntoExistingCollection(col, button, label) {
   });
 }
 
+document.getElementById('btnCreateToggle').addEventListener('click', function() {
+  var form = document.getElementById('createForm');
+  var wizard = document.getElementById('importWizard');
+  var show = !form.classList.contains('visible');
+  form.classList.toggle('visible', show);
+  if (wizard) wizard.classList.remove('visible');
+  if (show) {
+    focusNewCollectionForm();
+    return;
+  }
+  resetCreateForm();
+});
+
 document.getElementById('btnImportToggle').addEventListener('click', function() {
   var wizard = document.getElementById('importWizard');
-  wizard.classList.toggle('visible');
-  if (wizard.classList.contains('visible')) {
+  var form = document.getElementById('createForm');
+  var show = !wizard.classList.contains('visible');
+  wizard.classList.toggle('visible', show);
+  if (form) form.classList.remove('visible');
+  if (show) {
     clearImportSuccess();
     clearImportWizardInputs();
-    focusImportWizard();
+    refreshImportCollections().finally(function() {
+      focusImportWizard();
+    });
   }
+});
+
+document.getElementById('btnCreateCancel').addEventListener('click', function() {
+  resetCreateForm();
+});
+
+document.getElementById('btnCreateCol').addEventListener('click', function() {
+  var btn = document.getElementById('btnCreateCol');
+  var draft = buildCollectionDraft('newColName', 'newColScope');
+  if (!draft || !draft.ok) {
+    showToast((draft && draft.msg) || 'Enter a collection name', 'err');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+
+  callApi('create_collection', draft.name, draft.scope).then(function(r) {
+    if (!r || !r.ok) {
+      showToast((r && r.msg) || 'Create failed', 'err');
+      return;
+    }
+
+    var fullName = buildScopedCollectionName(draft.name, draft.scope);
+    return maybeSaveCollectionLabel(fullName, draft.displayName, draft.name).then(function(labelResult) {
+      if (labelResult && labelResult.ok === false) {
+        showToast((labelResult.msg) || ('Created ' + draft.displayName + ', but failed to save display label'), 'err');
+      } else {
+        showToast('Created: ' + draft.displayName, 'ok');
+      }
+      resetCreateForm();
+      loadCollections();
+      if (document.getElementById('importWizard').classList.contains('visible')) {
+        refreshImportCollections(fullName);
+      }
+    });
+  }).catch(function(err) {
+    showToast(String(err), 'err');
+  }).finally(function() {
+    btn.disabled = false;
+    btn.textContent = 'Create';
+  });
 });
 
 document.getElementById('btnImportBrowseFiles').addEventListener('click', function() {
@@ -2828,50 +3118,101 @@ document.getElementById('btnImportBrowseFolder').addEventListener('click', funct
   });
 });
 
+document.getElementById('btnImportModeExisting').addEventListener('click', function() {
+  setImportMode(IMPORT_MODE_EXISTING);
+});
+
+document.getElementById('btnImportModeNew').addEventListener('click', function() {
+  setImportMode(IMPORT_MODE_NEW);
+});
+
 document.getElementById('btnRunImport').addEventListener('click', function() {
   var btn = document.getElementById('btnRunImport');
   var selectedPaths = importSelectedItems.map(function(item) { return item.path; });
-  var draft = readImportDraft();
+  var destination = null;
+  var draft = null;
+  var fullName = '';
 
-  if (!draft || !draft.ok) {
-    showToast((draft && draft.msg) || 'Enter a collection name', 'err');
+  if (!selectedPaths.length) {
+    showToast('Select files or a folder to import', 'err');
     return;
   }
 
   clearImportSuccess();
-  btn.disabled = true;
-  if (selectedPaths.length) {
-    btn.textContent = 'Creating & Importing...';
-    setImportProgress('Creating collection and importing ' + selectedPaths.length + ' item' + (selectedPaths.length === 1 ? '' : 's') + '...');
-  } else {
-    btn.textContent = 'Creating...';
-    setImportProgress('Creating empty collection...');
-  }
 
-  var action = selectedPaths.length
-    ? callApi('import_files', selectedPaths, draft.name, draft.scope)
-    : callApi('create_collection', draft.name, draft.scope);
-
-  action.then(function(r) {
-    if (!r || !r.ok) {
-      showToast((r && r.msg) || 'Create failed', 'err');
+  if (currentImportMode === IMPORT_MODE_EXISTING) {
+    destination = readImportExistingSelection();
+    if (!destination || !destination.ok) {
+      showToast((destination && destination.msg) || 'Choose a collection', 'err');
       return;
     }
-    if (selectedPaths.length) {
-      renderImportSuccess(r);
-    } else {
-      clearImportSuccess();
+  } else {
+    draft = buildCollectionDraft('importCollectionName', 'importScope');
+    if (!draft || !draft.ok) {
+      showToast((draft && draft.msg) || 'Enter a collection name', 'err');
+      return;
     }
-    showToast((r && r.msg) || (selectedPaths.length ? 'Collection created and imported' : 'Collection created'), 'ok');
-    clearImportWizardInputs();
-    loadCollections();
-  }).catch(function(err) {
+    fullName = buildScopedCollectionName(draft.name, draft.scope);
+  }
+
+  btn.disabled = true;
+  if (currentImportMode === IMPORT_MODE_EXISTING) {
+    btn.textContent = 'Importing...';
+    setImportProgress('Importing ' + selectedPaths.length + ' item' + (selectedPaths.length === 1 ? '' : 's') + '...');
+  } else {
+    btn.textContent = 'Creating & Importing...';
+    setImportProgress('Creating collection and importing ' + selectedPaths.length + ' item' + (selectedPaths.length === 1 ? '' : 's') + '...');
+  }
+
+  var action = currentImportMode === IMPORT_MODE_EXISTING
+    ? callApi('import_files', selectedPaths, destination.fullName, 'shared').then(function(r) {
+        if (!r || !r.ok) {
+          showToast((r && r.msg) || 'Import failed', 'err');
+          return;
+        }
+        renderImportSuccess(r, 'Import complete', destination.displayName);
+        showToast('Imported into ' + destination.displayName, 'ok');
+        resetImportSelections();
+        loadCollections();
+        return refreshImportCollections(destination.fullName);
+      })
+    : callApi('import_files', selectedPaths, draft.name, draft.scope).then(function(r) {
+        if (!r || !r.ok) {
+          showToast((r && r.msg) || 'Import failed', 'err');
+          return;
+        }
+        return maybeSaveCollectionLabel(fullName, draft.displayName, draft.name).then(function(labelResult) {
+          renderImportSuccess(r, 'Collection created and imported', draft.displayName);
+          if (labelResult && labelResult.ok === false) {
+            showToast((labelResult.msg) || ('Created ' + draft.displayName + ', but failed to save display label'), 'err');
+          } else {
+            showToast('Created and imported: ' + draft.displayName, 'ok');
+          }
+          var nameInput = document.getElementById('importCollectionName');
+          var scopeSelect = document.getElementById('importScope');
+          if (nameInput) nameInput.value = '';
+          if (scopeSelect) scopeSelect.value = 'shared';
+          resetImportSelections();
+          loadCollections();
+          setImportMode(IMPORT_MODE_EXISTING);
+          return refreshImportCollections(fullName);
+        });
+      });
+
+  action.catch(function(err) {
     showToast(String(err), 'err');
   }).finally(function() {
     btn.disabled = false;
     updateImportSubmitButton();
     setImportProgress('');
   });
+});
+
+document.getElementById('newColName').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('btnCreateCol').click();
+  }
 });
 
 document.getElementById('importCollectionName').addEventListener('keydown', function(e) {
