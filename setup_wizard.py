@@ -12,9 +12,11 @@ import json
 import logging
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from datetime import datetime
 # On Linux with conda, the system WebKit2 typelib may not be on GI's search path.
 # Add the standard system typelib directory so pywebview can find GTK + WebKit2.
@@ -35,6 +37,9 @@ CONFIG_HOME = os.path.expanduser("~/.ember-memory")
 CONFIG_FILE = os.path.join(CONFIG_HOME, "config.env")
 CLAUDE_JSON = os.path.expanduser("~/.claude.json")
 CLAUDE_SETTINGS = os.path.expanduser("~/.claude/settings.json")
+GEMINI_SETTINGS = os.path.expanduser("~/.gemini/settings.json")
+CODEX_CONFIG = os.path.expanduser("~/.codex/config.toml")
+CODEX_HOOKS = os.path.expanduser("~/.codex/hooks.json")
 EMBER_ROOT = os.path.dirname(os.path.abspath(__file__))
 DASHBOARD_AI_IDS = ("claude", "gemini", "codex")
 
@@ -94,6 +99,184 @@ def save_config(config):
         f.write("\n".join(lines) + "\n")
 
 
+def _codex_server_command():
+    """Return a stdio MCP launch command that works from a source checkout."""
+    bootstrap = (
+        "import sys; "
+        f"sys.path.insert(0, {EMBER_ROOT!r}); "
+        "from ember_memory.server import mcp; "
+        "mcp.run(transport='stdio')"
+    )
+    return sys.executable, ["-c", bootstrap]
+
+
+def _toml_quote(value):
+    return json.dumps(str(value))
+
+
+def _toml_array(values):
+    return "[" + ", ".join(_toml_quote(v) for v in values) + "]"
+
+
+def _upsert_toml_table(text, table_name, body_lines):
+    """Replace or append a TOML table while preserving unrelated content."""
+    lines = text.splitlines()
+    header_re = re.compile(r"^\[([^\]]+)\]\s*$")
+    headers = []
+    for idx, line in enumerate(lines):
+        match = header_re.match(line.strip())
+        if match:
+            headers.append((match.group(1), idx))
+
+    replacement = [f"[{table_name}]", *body_lines]
+
+    for pos, (name, start_idx) in enumerate(headers):
+        if name != table_name:
+            continue
+        end_idx = headers[pos + 1][1] if pos + 1 < len(headers) else len(lines)
+        new_lines = lines[:start_idx] + replacement + lines[end_idx:]
+        return "\n".join(new_lines).rstrip() + "\n"
+
+    if lines and lines[-1] != "":
+        lines.append("")
+    lines.extend(replacement)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _upsert_toml_key(text, table_name, key, value_literal):
+    """Set one key inside a TOML table while preserving other table entries."""
+    lines = text.splitlines()
+    header_re = re.compile(r"^\[([^\]]+)\]\s*$")
+    key_re = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    headers = []
+    for idx, line in enumerate(lines):
+        match = header_re.match(line.strip())
+        if match:
+            headers.append((match.group(1), idx))
+
+    for pos, (name, start_idx) in enumerate(headers):
+        if name != table_name:
+            continue
+        end_idx = headers[pos + 1][1] if pos + 1 < len(headers) else len(lines)
+        body = lines[start_idx + 1:end_idx]
+        replaced = False
+        new_body = []
+        for line in body:
+            if key_re.match(line):
+                new_body.append(f"{key} = {value_literal}")
+                replaced = True
+            else:
+                new_body.append(line)
+        if not replaced:
+            new_body.append(f"{key} = {value_literal}")
+        new_lines = lines[:start_idx + 1] + new_body + lines[end_idx:]
+        return "\n".join(new_lines).rstrip() + "\n"
+
+    if lines and lines[-1] != "":
+        lines.append("")
+    lines.extend([f"[{table_name}]", f"{key} = {value_literal}"])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _load_toml(path):
+    if not os.path.exists(path):
+        return {}
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
+def _codex_mcp_configured():
+    config_data = _load_toml(CODEX_CONFIG)
+    return "ember-memory" in config_data.get("mcp_servers", {})
+
+
+def _codex_hooks_feature_enabled():
+    config_data = _load_toml(CODEX_CONFIG)
+    return bool(config_data.get("features", {}).get("codex_hooks"))
+
+
+def _codex_hook_script_path():
+    return os.path.join(EMBER_ROOT, "integrations", "codex", "hook.py")
+
+
+def _codex_hook_configured():
+    if not os.path.exists(CODEX_HOOKS):
+        return False
+    try:
+        with open(CODEX_HOOKS, "r") as f:
+            data = json.load(f)
+    except Exception:
+        return False
+
+    for entry in data.get("hooks", {}).get("UserPromptSubmit", []):
+        if not isinstance(entry, dict):
+            continue
+        for hook in entry.get("hooks", []):
+            if not isinstance(hook, dict):
+                continue
+            command = hook.get("command", "")
+            if "ember" in command.lower() or _codex_hook_script_path() in command:
+                return True
+    return False
+
+
+def _write_codex_hooks():
+    os.makedirs(os.path.dirname(CODEX_HOOKS), exist_ok=True)
+    hook_cmd = f"{sys.executable} {_codex_hook_script_path()}"
+    hooks = {
+        "hooks": {
+            "UserPromptSubmit": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": hook_cmd,
+                            "timeout": 10,
+                            "statusMessage": "Retrieving Ember Memory context",
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+    with open(CODEX_HOOKS, "w") as f:
+        json.dump(hooks, f, indent=2)
+
+
+def _write_codex_config(data_dir):
+    os.makedirs(os.path.dirname(CODEX_CONFIG), exist_ok=True)
+    command, args = _codex_server_command()
+
+    if os.path.exists(CODEX_CONFIG):
+        with open(CODEX_CONFIG, "r") as f:
+            config_text = f.read()
+    else:
+        config_text = ""
+
+    config_text = _upsert_toml_table(
+        config_text,
+        "mcp_servers.ember-memory",
+        [
+            f"command = {_toml_quote(command)}",
+            f"args = {_toml_array(args)}",
+            "startup_timeout_sec = 15",
+            "tool_timeout_sec = 30",
+        ],
+    )
+    config_text = _upsert_toml_table(
+        config_text,
+        "mcp_servers.ember-memory.env",
+        [
+            'EMBER_AI_ID = "codex"',
+            f"EMBER_DATA_DIR = {_toml_quote(data_dir)}",
+        ],
+    )
+    config_text = _upsert_toml_key(config_text, "features", "codex_hooks", "true")
+
+    with open(CODEX_CONFIG, "w") as f:
+        f.write(config_text)
+
+
 def normalize_dashboard_ai_id(ai_id):
     raw = str(ai_id or "").strip().lower()
     if not raw or raw == "all":
@@ -110,6 +293,10 @@ def _get_cli_from_session(session_scope):
     if s.startswith("gemini"):
         return "gemini"
     if s.startswith("codex"):
+        return "codex"
+    # Backward compatibility: older Codex hook installs wrote raw thread IDs
+    # (UUID-like strings such as 019d...-....) directly into heat scope.
+    if re.match(r"^[0-9a-f]{8}-[0-9a-f-]{27,}$", s):
         return "codex"
     return None
 
@@ -139,6 +326,25 @@ def get_dashboard_heat(state, ai_id=None):
             merged[mem_id] = merged.get(mem_id, 0.0) + heat
 
     return merged
+
+
+def get_dashboard_connections(state, ai_id=None, min_strength=0.0):
+    """Return dashboard connection rows, optionally scoped by CLI or session."""
+    conn = state._conn
+    rows = conn.execute(
+        "SELECT id_a, id_b, strength FROM connections WHERE strength > ? ORDER BY strength DESC",
+        (float(min_strength),),
+    ).fetchall()
+
+    selected_ai = normalize_dashboard_ai_id(ai_id)
+    if selected_ai is None:
+        return rows
+
+    visible_ids = set(get_dashboard_heat(state, ai_id=selected_ai).keys())
+    if not visible_ids:
+        return []
+
+    return [row for row in rows if row["id_a"] in visible_ids and row["id_b"] in visible_ids]
 
 
 def get_last_retrieval_path(data_dir, ai_id=None):
@@ -267,7 +473,18 @@ class EmberAPI:
         return results
 
     def check_integration(self):
-        result = {"mcp": False, "hook": False, "data_dir": False, "config": False}
+        result = {
+            "mcp": False,
+            "hook": False,
+            "data_dir": False,
+            "config": False,
+            "claude_mcp": False,
+            "claude_hook": False,
+            "gemini_mcp": False,
+            "gemini_hook": False,
+            "codex_mcp": False,
+            "codex_hook": False,
+        }
 
         cfg = load_config()
         data_dir = cfg.get("data_dir", DEFAULT_DATA_DIR)
@@ -281,7 +498,7 @@ class EmberAPI:
                 with open(CLAUDE_JSON, 'r') as f:
                     data = json.load(f)
                 if "ember-memory" in data.get("mcpServers", {}):
-                    result["mcp"] = True
+                    result["claude_mcp"] = True
             except Exception:
                 pass
 
@@ -293,18 +510,43 @@ class EmberAPI:
                     if isinstance(entry, dict):
                         for h in entry.get("hooks", []):
                             if "ember" in h.get("command", "").lower():
-                                result["hook"] = True
+                                result["claude_hook"] = True
             except Exception:
                 pass
+
+        if os.path.exists(GEMINI_SETTINGS):
+            try:
+                with open(GEMINI_SETTINGS, 'r') as f:
+                    data = json.load(f)
+                if "ember-memory" in data.get("mcpServers", {}):
+                    result["gemini_mcp"] = True
+                for entry in data.get("hooks", {}).get("BeforeAgent", []):
+                    if isinstance(entry, dict):
+                        for h in entry.get("hooks", []):
+                            if "ember" in h.get("name", "").lower() or "ember" in h.get("command", "").lower():
+                                result["gemini_hook"] = True
+            except Exception:
+                pass
+
+        try:
+            result["codex_mcp"] = _codex_mcp_configured()
+        except Exception:
+            pass
+        try:
+            result["codex_hook"] = _codex_hooks_feature_enabled() and _codex_hook_configured()
+        except Exception:
+            pass
+
+        result["mcp"] = bool(result["claude_mcp"] or result["gemini_mcp"] or result["codex_mcp"])
+        result["hook"] = bool(result["claude_hook"] or result["gemini_hook"] or result["codex_hook"])
 
         return result
 
     def run_install(self):
-        """Idempotent install: register MCP server + hook in CC config.
+        """Idempotent install: register Ember Memory with supported local CLIs.
 
-        Only touches CC config files once. All real settings live in config.env
-        inside the data directory — the MCP server and hook read from there at
-        runtime via ember_memory.config. CC config just gets a pointer.
+        All real settings live in config.env inside the data directory. CLI
+        config files only get the launch pointers and hook wiring they need.
         """
         errors = []
         cfg = load_config()
@@ -384,11 +626,10 @@ class EmberAPI:
         # 4. Gemini CLI — register hook + MCP if installed
         if shutil.which("gemini"):
             try:
-                gemini_settings = os.path.expanduser("~/.gemini/settings.json")
                 gemini_hook_path = os.path.join(EMBER_ROOT, "integrations", "gemini_cli", "hook.py")
                 gs = {}
-                if os.path.exists(gemini_settings):
-                    with open(gemini_settings, 'r') as f:
+                if os.path.exists(GEMINI_SETTINGS):
+                    with open(GEMINI_SETTINGS, 'r') as f:
                         gs = json.load(f)
 
                 # MCP server
@@ -426,15 +667,23 @@ class EmberAPI:
                         }]
                     })
 
-                os.makedirs(os.path.dirname(gemini_settings), exist_ok=True)
-                with open(gemini_settings, 'w') as f:
+                os.makedirs(os.path.dirname(GEMINI_SETTINGS), exist_ok=True)
+                with open(GEMINI_SETTINGS, 'w') as f:
                     json.dump(gs, f, indent=2)
             except Exception as e:
                 errors.append(f"Gemini CLI: {e}")
 
+        # 5. Codex — register MCP server if installed
+        if shutil.which("codex"):
+            try:
+                _write_codex_config(data_dir)
+                _write_codex_hooks()
+            except Exception as e:
+                errors.append(f"Codex: {e}")
+
         if errors:
             return {"ok": False, "msg": "; ".join(errors)}
-        return {"ok": True, "msg": "Installed! Restart Claude Code to activate."}
+        return {"ok": True, "msg": "Installed! Restart your CLIs to activate."}
 
     def get_collections(self):
         """List all collections with counts — uses v2 backend."""
@@ -874,11 +1123,9 @@ class EmberAPI:
             state = EngineState(db_path=db_path)
             all_heat = get_dashboard_heat(state, ai_id=ai_id)
             hot_count = sum(1 for heat in all_heat.values() if heat >= 0.5)
-            conn = state._conn
-            total_connections = conn.execute("SELECT COUNT(*) FROM connections").fetchone()[0]
-            established = conn.execute(
-                "SELECT COUNT(*) FROM connections WHERE strength >= 3.0"
-            ).fetchone()[0]
+            connection_rows = get_dashboard_connections(state, ai_id=ai_id, min_strength=0.0)
+            total_connections = len(connection_rows)
+            established = sum(1 for row in connection_rows if float(row["strength"]) >= 3.0)
             return {"ok": True, "stats": {
                 "tick_count": state.get_tick(),
                 "total_memories_tracked": len(all_heat),
@@ -979,7 +1226,7 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "pins": [], "msg": str(e)}
 
-    def get_activity_log(self, limit=20, ai_id=None):
+    def get_activity_log(self, limit=20, ai_id=None, session_id=None):
         """Get recent activity log entries for the dashboard feed."""
         try:
             cfg = load_config()
@@ -987,6 +1234,9 @@ class EmberAPI:
             if not os.path.exists(log_path):
                 return {"ok": True, "entries": []}
             selected_ai = normalize_dashboard_ai_id(ai_id)
+            selected_session = str(session_id or "").strip().lower()
+            if selected_session == "all":
+                selected_session = ""
             try:
                 limit = max(1, int(limit))
             except (TypeError, ValueError):
@@ -1002,9 +1252,12 @@ class EmberAPI:
                     except Exception:
                         pass
                     else:
+                        entry_session = str(entry.get("session") or "").strip().lower()
+                        if selected_session and entry_session != selected_session:
+                            continue
                         if selected_ai is not None:
                             entry_ai = normalize_dashboard_ai_id(entry.get("ai_id"))
-                            session_name = str(entry.get("session") or "").strip().lower()
+                            session_name = entry_session
                             if entry_ai != selected_ai and not (
                                 session_name == selected_ai
                                 or session_name.startswith(f"{selected_ai}-")
@@ -1017,6 +1270,52 @@ class EmberAPI:
             return {"ok": True, "entries": entries}
         except Exception as e:
             return {"ok": False, "entries": [], "msg": str(e)}
+
+    def get_recent_sessions(self, ai_filter=None):
+        """Get recent sessions from the activity log, grouped by CLI."""
+        try:
+            cfg = load_config()
+            log_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "activity.jsonl")
+            if not os.path.exists(log_path):
+                return {"ok": True, "sessions": []}
+
+            selected_filter = normalize_dashboard_ai_id(ai_filter)
+            sessions = {}
+            with open(log_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        sid = str(entry.get("session") or "").strip()
+                        ai_id = str(entry.get("ai_id") or "").strip()
+                        if not sid:
+                            continue
+
+                        if selected_filter is not None:
+                            cli = _get_cli_from_session(sid)
+                            if cli != selected_filter:
+                                continue
+
+                        if sid not in sessions:
+                            sessions[sid] = {
+                                "id": sid,
+                                "ai_id": ai_id,
+                                "last_prompt": "",
+                                "last_ts": "",
+                                "count": 0,
+                            }
+                        sessions[sid]["last_prompt"] = str(entry.get("prompt") or "")[:80]
+                        sessions[sid]["last_ts"] = str(entry.get("ts") or "")
+                        sessions[sid]["count"] += 1
+                    except Exception:
+                        pass
+
+            result = sorted(sessions.values(), key=lambda session: session["last_ts"], reverse=True)
+            return {"ok": True, "sessions": result[:20]}
+        except Exception as e:
+            return {"ok": False, "sessions": [], "msg": str(e)}
 
     def get_heat_map(self, ai_id=None):
         """Get all heat values for visualization with metadata."""
@@ -1035,7 +1334,7 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
-    def get_connections(self):
+    def get_connections(self, ai_id=None):
         """Get all connections for graph visualization."""
         try:
             from ember_memory.core.engine.state import EngineState
@@ -1044,12 +1343,10 @@ class EmberAPI:
             if not os.path.exists(db_path):
                 return {"ok": True, "connections": []}
             state = EngineState(db_path=db_path)
-            conn = state._conn
-            rows = conn.execute(
-                "SELECT id_a, id_b, strength FROM connections WHERE strength > 0.1 ORDER BY strength DESC LIMIT 100"
-            ).fetchall()
+            rows = get_dashboard_connections(state, ai_id=ai_id, min_strength=0.1)[:100]
             connections = [{"source": r[0], "target": r[1], "strength": r[2]} for r in rows]
-            return {"ok": True, "connections": connections}
+            meta = state.get_all_memory_meta()
+            return {"ok": True, "connections": connections, "meta": meta}
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 

@@ -169,6 +169,12 @@ html, body {
 .ai-filter-btn[data-ai="codex"].active {
   background: rgba(16,163,127,0.15); color: #10a37f; border-color: rgba(16,163,127,0.3);
 }
+.session-filter { margin-bottom: 8px; display: none; }
+.session-filter.visible { display: block; }
+.session-filter select {
+  width: 100%; font-family: var(--font-mono); font-size: 11px; padding: 6px 10px;
+  background: var(--bg-raised); border: 1px solid var(--border); color: var(--fg); border-radius: 6px;
+}
 
 /* Heat map */
 .hot-now-list { display: flex; flex-direction: column; }
@@ -285,7 +291,14 @@ html, body {
 }
 
 /* Connection graph */
-#conn-svg { width: 100%; height: 260px; display: block; }
+.conn-row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 4px; margin-bottom: 2px; }
+.conn-row:hover { background: rgba(255,120,32,0.06); }
+.conn-id { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); width: 120px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.conn-arrow { color: var(--ember); font-size: 12px; flex-shrink: 0; }
+.conn-bar-track { flex: 1; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+.conn-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
+.conn-strength { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); width: 32px; flex-shrink: 0; text-align: right; }
+.conn-established { color: var(--ember); font-weight: 600; }
 .conn-graph-wrap { background: var(--bg-raised); border-radius: 6px; overflow: hidden; }
 
 /* Empty / loading states */
@@ -603,6 +616,11 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
         <button class="ai-filter-btn" data-ai="gemini">Gemini</button>
         <button class="ai-filter-btn" data-ai="codex">Codex</button>
       </div>
+      <div class="session-filter" id="sessionFilterWrap">
+        <select id="sessionFilter">
+          <option value="">All Sessions</option>
+        </select>
+      </div>
 
       <div class="stat-row">
         <div class="stat-card">
@@ -680,23 +698,11 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
 
       <div class="panel">
         <div class="panel-hdr">
-          <div class="panel-hdr-title">Connection Graph</div>
+          <div class="panel-hdr-title">Topic Connections</div>
           <span class="refresh-badge" id="connRefreshTime"></span>
         </div>
-        <div class="panel-body" style="padding:0;">
-          <div class="conn-graph-wrap" id="connGraphWrap">
-            <svg id="conn-svg">
-              <defs>
-                <radialGradient id="nodeGrad" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stop-color="#FFA040" stop-opacity="0.9"/>
-                  <stop offset="100%" stop-color="#FF7820" stop-opacity="0.6"/>
-                </radialGradient>
-              </defs>
-              <g id="conn-edges"></g>
-              <g id="conn-nodes"></g>
-            </svg>
-          </div>
-          <div id="connEmptyState" style="display:none;" class="empty-state">
+        <div class="panel-body" id="connTableArea">
+          <div class="empty-state" id="connEmptyState">
             <div class="empty-icon">&#9673;</div>
             Connections emerge as topics co-occur in your work
           </div>
@@ -711,24 +717,7 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
       <div class="section-hdr">
         <span class="section-title">Collections</span>
         <div class="section-actions">
-          <button class="btn btn-primary btn-sm" id="btnCreateToggle">+ New Collection</button>
-          <button class="btn btn-secondary btn-sm" id="btnImportToggle">Import Knowledge</button>
-        </div>
-      </div>
-
-      <!-- Quick launch moved to per-owner sections -->
-
-      <div class="create-form" id="createForm">
-        <div class="form-row">
-          <input type="text" class="fluid" id="newColName" placeholder="Topic name" />
-          <select id="newColScope">
-            <option value="shared">Shared</option>
-            <option value="claude">Claude</option>
-            <option value="gemini">Gemini</option>
-            <option value="codex">Codex</option>
-          </select>
-          <button class="btn btn-primary btn-sm" id="btnCreateCol">Create</button>
-          <button class="btn btn-secondary btn-sm" id="btnCreateCancel">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="btnImportToggle">Import Knowledge</button>
         </div>
       </div>
 
@@ -758,22 +747,32 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
           <div class="import-step">
             <div class="import-step-label">3. Select collection</div>
             <select id="importCollectionSelect"></select>
+            <div id="existingNewTopicArea" style="display:none; margin-top:8px;">
+              <div class="import-step-label">New topic name</div>
+              <div class="import-supported" style="margin-bottom:4px;">Add a new topic under this collection group</div>
+              <input type="text" class="fluid" id="existingNewTopicName" placeholder="e.g. identity, reflections, notes" />
+            </div>
           </div>
         </div>
 
         <div class="import-mode-panel" id="importModeNew">
           <div class="import-step">
-            <div class="import-step-label">3. New topic name</div>
-            <div class="form-row" style="margin-bottom:8px;">
-              <input type="text" class="fluid" id="importCollectionName" placeholder="Seren's Identity" />
-            </div>
-            <div class="form-row">
-              <select id="importScope">
+            <div class="import-step-label">3. Collection Name</div>
+            <div class="import-supported" style="margin-bottom:4px;">The group this topic belongs to (e.g. "Seren's Collections")</div>
+            <div class="form-row" style="margin-bottom:10px; gap:8px;">
+              <select id="importScope" class="fluid" style="flex:0 0 auto; min-width:120px;">
                 <option value="shared">Shared</option>
                 <option value="claude">Claude</option>
                 <option value="gemini">Gemini</option>
                 <option value="codex">Codex</option>
               </select>
+              <input type="text" class="fluid" id="importCollectionDisplayName" placeholder="Display name (optional)" />
+            </div>
+
+            <div class="import-step-label">Topic Name</div>
+            <div class="import-supported" style="margin-bottom:4px;">What this content is about (e.g. "identity", "reflections")</div>
+            <div class="form-row" style="margin-bottom:8px;">
+              <input type="text" class="fluid" id="importCollectionName" placeholder="e.g. identity, reflections, notes" />
             </div>
           </div>
         </div>
@@ -1126,11 +1125,9 @@ function initTabs() {
 // DASHBOARD
 // =====================================================
 
-var forceAnimId = null;
-var forceNodes = [];
-var forceEdges = [];
-var forceFrame = 0;
+// Force graph removed — replaced with connection table
 var currentAiFilter = 'all';
+var currentSessionFilter = '';
 
 function setEngineAlive(alive) {
   document.getElementById('engineDot').classList.toggle('live', alive);
@@ -1139,6 +1136,93 @@ function setEngineAlive(alive) {
 
 function getDashboardAiId() {
   return currentAiFilter === 'all' ? null : currentAiFilter;
+}
+
+function getDashboardScopeId() {
+  return currentSessionFilter || getDashboardAiId();
+}
+
+function resetSessionFilterOptions(select) {
+  if (!select) return;
+  select.textContent = '';
+  var option = document.createElement('option');
+  option.value = '';
+  option.textContent = 'All Sessions';
+  select.appendChild(option);
+}
+
+function buildSessionOptionLabel(session) {
+  var preview = String((session && session.last_prompt) || '').trim();
+  var count = safeNum(session && session.count, 0);
+  var parts = [String((session && session.id) || '')];
+  if (preview) parts.push(preview);
+  parts.push(String(count) + ' msgs');
+  return parts.join(' | ');
+}
+
+function updateSessionFilterVisibility() {
+  var wrap = document.getElementById('sessionFilterWrap');
+  var select = document.getElementById('sessionFilter');
+  if (!wrap) return;
+
+  var visible = currentAiFilter !== 'all';
+  wrap.classList.toggle('visible', visible);
+  if (!visible) {
+    currentSessionFilter = '';
+    resetSessionFilterOptions(select);
+    if (select) select.value = '';
+  }
+}
+
+function populateSessionFilterOptions(sessions) {
+  var select = document.getElementById('sessionFilter');
+  if (!select) return;
+
+  var selected = currentSessionFilter;
+  var available = {};
+  resetSessionFilterOptions(select);
+
+  (sessions || []).forEach(function(session) {
+    var option = document.createElement('option');
+    var sessionId = String((session && session.id) || '');
+    if (!sessionId) return;
+    option.value = sessionId;
+    option.textContent = buildSessionOptionLabel(session);
+    available[sessionId] = true;
+    select.appendChild(option);
+  });
+
+  if (selected && available[selected]) {
+    select.value = selected;
+  } else {
+    currentSessionFilter = '';
+    select.value = '';
+  }
+}
+
+function refreshSessionFilter() {
+  if (currentAiFilter === 'all') {
+    updateSessionFilterVisibility();
+    return Promise.resolve({ ok: true, sessions: [] });
+  }
+
+  updateSessionFilterVisibility();
+  return callApi('get_recent_sessions', currentAiFilter).then(function(r) {
+    if (r && r.ok) populateSessionFilterOptions(r.sessions);
+    return r;
+  });
+}
+
+function initSessionFilter() {
+  var select = document.getElementById('sessionFilter');
+  if (!select || select.getAttribute('data-ready') === 'true') return;
+  select.setAttribute('data-ready', 'true');
+  resetSessionFilterOptions(select);
+  updateSessionFilterVisibility();
+  select.addEventListener('change', function() {
+    currentSessionFilter = select.value || '';
+    loadDashboard();
+  });
 }
 
 function getAiDisplayName(aiId) {
@@ -1165,6 +1249,7 @@ function initAiFilters() {
       var nextFilter = btn.getAttribute('data-ai') || 'all';
       if (nextFilter === currentAiFilter) return;
       currentAiFilter = nextFilter;
+      currentSessionFilter = '';
       updateAiFilterButtons();
       loadDashboard();
     });
@@ -1331,7 +1416,7 @@ function loadHotNow() {
   if (!area) return;
 
   setTextById('hotNowRefreshTime', nowStr());
-  callApi('get_heat_map', getDashboardAiId()).then(function(r) {
+  callApi('get_heat_map', getDashboardScopeId()).then(function(r) {
     if (!area) return;
 
     area.textContent = '';
@@ -1366,35 +1451,37 @@ function loadHotNow() {
 }
 
 function loadDashboard() {
-  callApi('get_engine_stats', getDashboardAiId()).then(function(r) {
-    if (!r || !r.ok) { setEngineAlive(false); return; }
-    var s = r.stats || {};
-    var memCount  = s.total_memories_tracked || 0;
-    var hotCount  = s.hot_memories           || 0;
-    var connCount = s.established_connections || 0;
-    var tickCount = s.tick_count             || 0;
-    var heatMode  = s.heat_mode              || 'universal';
+  refreshSessionFilter().then(function() {
+    callApi('get_engine_stats', getDashboardScopeId()).then(function(r) {
+      if (!r || !r.ok) { setEngineAlive(false); return; }
+      var s = r.stats || {};
+      var memCount  = s.total_memories_tracked || 0;
+      var hotCount  = s.hot_memories           || 0;
+      var connCount = s.established_connections || 0;
+      var tickCount = s.tick_count             || 0;
+      var heatMode  = s.heat_mode              || 'universal';
 
-    setTextById('stat-memories', memCount);
-    setTextById('stat-connections', connCount);
-    setTextById('stat-ticks', tickCount);
-    setTextById('heatModeBadge', heatMode);
+      setTextById('stat-memories', memCount);
+      setTextById('stat-connections', connCount);
+      setTextById('stat-ticks', tickCount);
+      setTextById('heatModeBadge', heatMode);
 
-    var hotEl = document.getElementById('stat-hot');
-    if (hotEl) {
-      hotEl.textContent = String(hotCount);
-      hotEl.className = 'stat-value' + (hotCount > 0 ? ' hot' : '');
-    }
+      var hotEl = document.getElementById('stat-hot');
+      if (hotEl) {
+        hotEl.textContent = String(hotCount);
+        hotEl.className = 'stat-value' + (hotCount > 0 ? ' hot' : '');
+      }
 
-    setEngineAlive(true);
-    setTextById('heatRefreshTime', nowStr());
+      setEngineAlive(true);
+      setTextById('heatRefreshTime', nowStr());
+    });
+
+    loadHotNow();
+    loadHeatMap();
+    loadLastRetrieval();
+    loadActivityFeed();
+    loadConnGraph();
   });
-
-  loadHotNow();
-  loadHeatMap();
-  loadLastRetrieval();
-  loadActivityFeed();
-  loadConnGraph();
 }
 
 function heatColor(norm) {
@@ -1488,7 +1575,7 @@ function buildHeatBarRow(id, val, maxVal, meta) {
 
 function loadHeatMap() {
   var area = document.getElementById('heatMapArea');
-  callApi('get_heat_map', getDashboardAiId()).then(function(r) {
+  callApi('get_heat_map', getDashboardScopeId()).then(function(r) {
     if (!area) return;
     if (!r || !r.ok || !r.heat || Object.keys(r.heat).length === 0) {
       area.textContent = '';
@@ -1633,13 +1720,15 @@ function loadLastRetrieval() {
   if (!area) return;
   setTextById('retrievalRefreshTime', nowStr());
 
-  callApi('get_last_retrieval', getDashboardAiId()).then(function(r) {
+  callApi('get_last_retrieval', getDashboardScopeId()).then(function(r) {
     if (!r || !r.ok || !r.retrieval || !r.retrieval.results) {
       area.textContent = '';
       var empt = document.createElement('div');
       empt.className = 'empty-state';
       var ico = el('div', 'empty-icon', '\uD83D\uDD0D');
-      var label = currentAiFilter === 'all' ? 'retrieval' : (getAiDisplayName(currentAiFilter) + ' retrieval');
+      var label = currentSessionFilter
+        ? ('session ' + currentSessionFilter + ' retrieval')
+        : (currentAiFilter === 'all' ? 'retrieval' : (getAiDisplayName(currentAiFilter) + ' retrieval'));
       var msg = el('span', null, 'Waiting for first ' + label + '...');
       empt.appendChild(ico);
       empt.appendChild(msg);
@@ -1788,16 +1877,18 @@ function loadActivityFeed() {
   if (!area) return;
   setTextById('activityRefreshTime', nowStr());
 
-  callApi('get_activity_log', 20, getDashboardAiId()).then(function(r) {
+  callApi('get_activity_log', 20, getDashboardAiId(), currentSessionFilter || null).then(function(r) {
     area.textContent = '';
 
     if (!r || !r.ok || !r.entries || r.entries.length === 0) {
       var empt = document.createElement('div');
       empt.className = 'empty-state';
       var msg = document.createElement('span');
-      msg.textContent = currentAiFilter === 'all'
-        ? 'No activity yet — send a message to your AI'
-        : ('No ' + getAiDisplayName(currentAiFilter) + ' activity yet');
+      msg.textContent = currentSessionFilter
+        ? ('No activity yet for session ' + currentSessionFilter)
+        : (currentAiFilter === 'all'
+          ? 'No activity yet — send a message to your AI'
+          : ('No ' + getAiDisplayName(currentAiFilter) + ' activity yet'));
       empt.appendChild(msg);
       area.appendChild(empt);
       return;
@@ -1844,172 +1935,77 @@ function loadActivityFeed() {
   });
 }
 
-// Force-directed graph
+// Topic Connections table
 function loadConnGraph() {
-  var svg       = document.getElementById('conn-svg');
-  var edgesG    = document.getElementById('conn-edges');
-  var nodesG    = document.getElementById('conn-nodes');
-  var emptyEl   = document.getElementById('connEmptyState');
+  var area = document.getElementById('connTableArea');
+  var emptyEl = document.getElementById('connEmptyState');
 
   setTextById('connRefreshTime', nowStr());
 
-  callApi('get_connections').then(function(r) {
+  callApi('get_connections', getDashboardScopeId()).then(function(r) {
+    if (!area) return;
     if (!r || !r.ok || !r.connections || r.connections.length === 0) {
-      if (svg) svg.style.display = 'none';
+      area.textContent = '';
+      area.appendChild(emptyEl || buildEmptyState('Connections emerge as topics co-occur in your work'));
       if (emptyEl) emptyEl.style.display = 'block';
       return;
     }
 
-    if (svg) svg.style.display = 'block';
-    if (emptyEl) emptyEl.style.display = 'none';
-    edgesG.textContent = '';
-    nodesG.textContent = '';
+    area.textContent = '';
+    var connections = r.connections.slice(0, 15); // Top 15
+    var maxStr = connections[0].strength || 1;
+    var meta = r.meta || {};
 
-    var connections = r.connections;
-    var W = (svg && svg.clientWidth) || 760;
-    var H = 260;
-
-    // Build nodes
-    var nodeMap = {};
     connections.forEach(function(c) {
-      if (!nodeMap[c.source]) nodeMap[c.source] = { id: c.source, conns: 0 };
-      if (!nodeMap[c.target]) nodeMap[c.target] = { id: c.target, conns: 0 };
-      nodeMap[c.source].conns++;
-      nodeMap[c.target].conns++;
+      var row = document.createElement('div');
+      row.className = 'conn-row';
+
+      // Source label
+      var srcMeta = meta[c.source];
+      var srcLabel = srcMeta ? (srcMeta.collection || c.source).substring(0, 20) : c.source.substring(0, 16);
+      var srcEl = document.createElement('div');
+      srcEl.className = 'conn-id';
+      srcEl.textContent = srcLabel;
+      srcEl.title = srcMeta ? (srcMeta.collection + ': ' + (srcMeta.preview || '').substring(0, 80)) : c.source;
+
+      // Arrow
+      var arrow = document.createElement('div');
+      arrow.className = 'conn-arrow';
+      arrow.textContent = '\u2194';
+
+      // Target label
+      var tgtMeta = meta[c.target];
+      var tgtLabel = tgtMeta ? (tgtMeta.collection || c.target).substring(0, 20) : c.target.substring(0, 16);
+      var tgtEl = document.createElement('div');
+      tgtEl.className = 'conn-id';
+      tgtEl.style.textAlign = 'left';
+      tgtEl.textContent = tgtLabel;
+      tgtEl.title = tgtMeta ? (tgtMeta.collection + ': ' + (tgtMeta.preview || '').substring(0, 80)) : c.target;
+
+      // Strength bar
+      var track = document.createElement('div');
+      track.className = 'conn-bar-track';
+      var fill = document.createElement('div');
+      fill.className = 'conn-bar-fill';
+      var pct = Math.round((c.strength / maxStr) * 100);
+      fill.style.width = Math.max(4, pct) + '%';
+      var isEstab = c.strength >= 3.0;
+      fill.style.background = isEstab ? 'var(--ember)' : 'rgba(255,255,255,0.15)';
+      track.appendChild(fill);
+
+      // Strength value
+      var val = document.createElement('div');
+      val.className = 'conn-strength' + (isEstab ? ' conn-established' : '');
+      val.textContent = c.strength.toFixed(1);
+
+      row.appendChild(srcEl);
+      row.appendChild(arrow);
+      row.appendChild(tgtEl);
+      row.appendChild(track);
+      row.appendChild(val);
+      area.appendChild(row);
     });
-
-    var nodeList = Object.values(nodeMap);
-    forceNodes = nodeList.map(function(n, i) {
-      var angle = (i / nodeList.length) * Math.PI * 2;
-      var rad   = Math.min(W, H) * 0.3;
-      return {
-        id: n.id, conns: n.conns,
-        x: W / 2 + Math.cos(angle) * rad + (Math.random() - 0.5) * 20,
-        y: H / 2 + Math.sin(angle) * rad * 0.7 + (Math.random() - 0.5) * 20,
-        vx: 0, vy: 0, el: null, radius: 4
-      };
-    });
-
-    forceEdges = connections.map(function(c) {
-      return { source: c.source, target: c.target, strength: c.strength || 1, el: null };
-    });
-
-    var ns = 'http://www.w3.org/2000/svg';
-    var maxStrength = Math.max.apply(null, forceEdges.map(function(e) { return e.strength; }).concat([1]));
-    var maxConns    = Math.max.apply(null, forceNodes.map(function(n) { return n.conns;    }).concat([1]));
-
-    forceEdges.forEach(function(e) {
-      var line = document.createElementNS(ns, 'line');
-      var norm = e.strength / maxStrength;
-      var w = (0.5 + norm * 2.5).toFixed(1);
-      var isEstab = e.strength >= 3.0;
-      var alpha = (0.2 + norm * 0.6).toFixed(2);
-      var color = isEstab
-        ? 'rgba(255,120,32,' + alpha + ')'
-        : 'rgba(120,100,80,' + alpha + ')';
-      line.setAttribute('stroke', color);
-      line.setAttribute('stroke-width', w);
-      edgesG.appendChild(line);
-      e.el = line;
-    });
-
-    forceNodes.forEach(function(n) {
-      var normC  = n.conns / maxConns;
-      var radius = 4 + normC * 8;
-      n.radius   = radius;
-      var g      = document.createElementNS(ns, 'g');
-      var circle = document.createElementNS(ns, 'circle');
-      circle.setAttribute('r', radius);
-      circle.setAttribute('fill', 'url(#nodeGrad)');
-      circle.setAttribute('opacity', '0.85');
-      var title = document.createElementNS(ns, 'title');
-      title.textContent = n.id;
-      g.appendChild(circle);
-      g.appendChild(title);
-      nodesG.appendChild(g);
-      n.el = g;
-    });
-
-    if (forceAnimId) { cancelAnimationFrame(forceAnimId); forceAnimId = null; }
-    forceFrame = 0;
-    runForce(W, H);
   });
-}
-
-function runForce(W, H) {
-  var REPEL   = 900;
-  var ATTRACT = 0.04;
-  var GRAVITY = 0.012;
-  var FRICTION = 0.88;
-  var MAX_FRAMES = 220;
-
-  var nodeById = {};
-  forceNodes.forEach(function(n) { nodeById[n.id] = n; });
-
-  function step() {
-    forceFrame++;
-    var totalV = 0;
-
-    // Repulsion + gravity
-    for (var i = 0; i < forceNodes.length; i++) {
-      var a = forceNodes[i];
-      a.vx += (W / 2 - a.x) * GRAVITY;
-      a.vy += (H / 2 - a.y) * GRAVITY;
-
-      for (var j = i + 1; j < forceNodes.length; j++) {
-        var b = forceNodes[j];
-        var dx = a.x - b.x;
-        var dy = a.y - b.y;
-        var d2 = dx * dx + dy * dy + 1;
-        var d  = Math.sqrt(d2);
-        var f  = REPEL / d2;
-        a.vx += f * dx / d;  a.vy += f * dy / d;
-        b.vx -= f * dx / d;  b.vy -= f * dy / d;
-      }
-    }
-
-    // Edge attraction
-    forceEdges.forEach(function(e) {
-      var s = nodeById[e.source];
-      var t = nodeById[e.target];
-      if (!s || !t) return;
-      var dx = t.x - s.x;
-      var dy = t.y - s.y;
-      var d  = Math.sqrt(dx * dx + dy * dy) + 1;
-      var f  = ATTRACT * d * (e.strength || 1);
-      s.vx += f * dx / d;  s.vy += f * dy / d;
-      t.vx -= f * dx / d;  t.vy -= f * dy / d;
-    });
-
-    // Integrate
-    forceNodes.forEach(function(n) {
-      n.vx *= FRICTION;
-      n.vy *= FRICTION;
-      n.x = Math.max(n.radius + 4, Math.min(W - n.radius - 4, n.x + n.vx));
-      n.y = Math.max(n.radius + 4, Math.min(H - n.radius - 4, n.y + n.vy));
-      totalV += Math.abs(n.vx) + Math.abs(n.vy);
-      if (n.el) n.el.setAttribute('transform', 'translate(' + n.x + ',' + n.y + ')');
-    });
-
-    // Update edge positions
-    forceEdges.forEach(function(e) {
-      var s = nodeById[e.source];
-      var t = nodeById[e.target];
-      if (!s || !t || !e.el) return;
-      e.el.setAttribute('x1', s.x);
-      e.el.setAttribute('y1', s.y);
-      e.el.setAttribute('x2', t.x);
-      e.el.setAttribute('y2', t.y);
-    });
-
-    if (forceFrame < MAX_FRAMES && totalV > 0.2) {
-      forceAnimId = requestAnimationFrame(step);
-    } else {
-      forceAnimId = null;
-    }
-  }
-
-  forceAnimId = requestAnimationFrame(step);
 }
 
 // Heat mode toggle
@@ -2045,7 +2041,11 @@ var dashRefreshInterval = null;
 function startDashRefresh() {
   stopDashRefresh();
   loadDashboard();
-  dashRefreshInterval = setInterval(loadDashboard, 10000);
+  dashRefreshInterval = setInterval(function() {
+    // Skip refresh when window isn't focused to prevent flicker
+    if (document.hidden) return;
+    loadDashboard();
+  }, 15000);
 }
 
 function stopDashRefresh() {
@@ -2383,13 +2383,24 @@ function buildOwnerSection(ownerKey, collections, labels, disabledMap) {
 
   var headerTop = document.createElement('div');
   headerTop.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
+  var labelWrap = document.createElement('span');
+  labelWrap.style.cssText = 'display:flex; align-items:center; gap:6px; cursor:pointer;';
+  labelWrap.title = 'Click to rename';
+
   var label = document.createElement('span');
   label.textContent = ownerLabels[ownerKey] || ownerKey;
-  label.style.cursor = 'pointer';
-  label.title = 'Double-click to rename';
 
-  // Make section header renamable on double-click
-  label.addEventListener('dblclick', function() {
+  var pencil = document.createElement('span');
+  pencil.textContent = '\u270E';
+  pencil.style.cssText = 'font-size:12px; opacity:0.4; transition:opacity 0.2s;';
+  labelWrap.addEventListener('mouseenter', function() { pencil.style.opacity = '0.8'; });
+  labelWrap.addEventListener('mouseleave', function() { pencil.style.opacity = '0.4'; });
+
+  labelWrap.appendChild(label);
+  labelWrap.appendChild(pencil);
+
+  // Make section header renamable on click
+  labelWrap.addEventListener('click', function() {
     var current = label.textContent;
     var input = document.createElement('input');
     input.type = 'text';
@@ -2418,7 +2429,7 @@ function buildOwnerSection(ownerKey, collections, labels, disabledMap) {
     input.addEventListener('blur', function() { finishRename(true); });
   });
 
-  headerTop.appendChild(label);
+  headerTop.appendChild(labelWrap);
 
   // Right side: count + master toggle
   var rightSide = document.createElement('div');
@@ -2646,11 +2657,6 @@ function getImportPathBaseName(path) {
   return parts[parts.length - 1] || cleaned;
 }
 
-function focusNewCollectionForm() {
-  var nameInput = document.getElementById('newColName');
-  if (nameInput) nameInput.focus();
-}
-
 function focusImportWizard() {
   if (currentImportMode === IMPORT_MODE_EXISTING) {
     var select = document.getElementById('importCollectionSelect');
@@ -2676,14 +2682,7 @@ function buildCollectionDraft(nameInputId, scopeSelectId) {
   };
 }
 
-function resetCreateForm() {
-  var form = document.getElementById('createForm');
-  var nameInput = document.getElementById('newColName');
-  var scopeSelect = document.getElementById('newColScope');
-  if (form) form.classList.remove('visible');
-  if (nameInput) nameInput.value = '';
-  if (scopeSelect) scopeSelect.value = 'shared';
-}
+// resetCreateForm removed — unified into Import Knowledge
 
 function setImportMode(mode) {
   currentImportMode = mode === IMPORT_MODE_NEW ? IMPORT_MODE_NEW : IMPORT_MODE_EXISTING;
@@ -2866,6 +2865,13 @@ function refreshImportCollections(selectedName) {
           group.appendChild(option);
         });
 
+        // Add "+ New Topic" option for this owner group
+        var newTopicOpt = document.createElement('option');
+        newTopicOpt.value = '__new_topic__' + owner;
+        newTopicOpt.textContent = '+ New Topic';
+        newTopicOpt.setAttribute('data-scope', owner);
+        group.appendChild(newTopicOpt);
+
         select.appendChild(group);
       });
 
@@ -2902,6 +2908,24 @@ function readImportExistingSelection() {
   var option = select.options[select.selectedIndex];
   var rawName = option ? String(option.value || '').trim() : '';
   if (!rawName) return { ok: false, msg: 'Choose a collection' };
+
+  // Handle "+ New Topic" under an existing owner group
+  if (rawName.startsWith('__new_topic__')) {
+    var scope = option.getAttribute('data-scope') || rawName.replace('__new_topic__', '');
+    var topicInput = document.getElementById('existingNewTopicName');
+    var topicRaw = topicInput ? topicInput.value.trim() : '';
+    if (!topicRaw) return { ok: false, msg: 'Enter a topic name for the new collection' };
+    var topicClean = sanitizeCollectionName(topicRaw);
+    var fullName = scope === 'shared' ? topicClean : (scope + '--' + topicClean);
+    return {
+      ok: true,
+      fullName: fullName,
+      displayName: topicRaw,
+      scope: scope,
+      isNewTopic: true,
+    };
+  }
+
   return {
     ok: true,
     fullName: rawName,
@@ -3028,25 +3052,10 @@ function importFilesIntoExistingCollection(col, button, label) {
   });
 }
 
-document.getElementById('btnCreateToggle').addEventListener('click', function() {
-  var form = document.getElementById('createForm');
-  var wizard = document.getElementById('importWizard');
-  var show = !form.classList.contains('visible');
-  form.classList.toggle('visible', show);
-  if (wizard) wizard.classList.remove('visible');
-  if (show) {
-    focusNewCollectionForm();
-    return;
-  }
-  resetCreateForm();
-});
-
 document.getElementById('btnImportToggle').addEventListener('click', function() {
   var wizard = document.getElementById('importWizard');
-  var form = document.getElementById('createForm');
   var show = !wizard.classList.contains('visible');
   wizard.classList.toggle('visible', show);
-  if (form) form.classList.remove('visible');
   if (show) {
     clearImportSuccess();
     clearImportWizardInputs();
@@ -3056,46 +3065,14 @@ document.getElementById('btnImportToggle').addEventListener('click', function() 
   }
 });
 
-document.getElementById('btnCreateCancel').addEventListener('click', function() {
-  resetCreateForm();
-});
+// btnCreateToggle, btnCreateCancel, btnCreateCol removed — unified into Import Knowledge
 
-document.getElementById('btnCreateCol').addEventListener('click', function() {
-  var btn = document.getElementById('btnCreateCol');
-  var draft = buildCollectionDraft('newColName', 'newColScope');
-  if (!draft || !draft.ok) {
-    showToast((draft && draft.msg) || 'Enter a collection name', 'err');
-    return;
+document.getElementById('importCollectionSelect').addEventListener('change', function() {
+  var val = this.value;
+  var topicArea = document.getElementById('existingNewTopicArea');
+  if (topicArea) {
+    topicArea.style.display = val.startsWith('__new_topic__') ? 'block' : 'none';
   }
-
-  btn.disabled = true;
-  btn.textContent = 'Creating...';
-
-  callApi('create_collection', draft.name, draft.scope).then(function(r) {
-    if (!r || !r.ok) {
-      showToast((r && r.msg) || 'Create failed', 'err');
-      return;
-    }
-
-    var fullName = buildScopedCollectionName(draft.name, draft.scope);
-    return maybeSaveCollectionLabel(fullName, draft.displayName, draft.name).then(function(labelResult) {
-      if (labelResult && labelResult.ok === false) {
-        showToast((labelResult.msg) || ('Created ' + draft.displayName + ', but failed to save display label'), 'err');
-      } else {
-        showToast('Created: ' + draft.displayName, 'ok');
-      }
-      resetCreateForm();
-      loadCollections();
-      if (document.getElementById('importWizard').classList.contains('visible')) {
-        refreshImportCollections(fullName);
-      }
-    });
-  }).catch(function(err) {
-    showToast(String(err), 'err');
-  }).finally(function() {
-    btn.disabled = false;
-    btn.textContent = 'Create';
-  });
 });
 
 document.getElementById('btnImportBrowseFiles').addEventListener('click', function() {
@@ -3165,13 +3142,22 @@ document.getElementById('btnRunImport').addEventListener('click', function() {
   }
 
   var action = currentImportMode === IMPORT_MODE_EXISTING
-    ? callApi('import_files', selectedPaths, destination.fullName, 'shared').then(function(r) {
+    ? callApi('import_files', selectedPaths, destination.fullName, destination.scope || 'shared').then(function(r) {
         if (!r || !r.ok) {
           showToast((r && r.msg) || 'Import failed', 'err');
           return;
         }
-        renderImportSuccess(r, 'Import complete', destination.displayName);
-        showToast('Imported into ' + destination.displayName, 'ok');
+        // Save display label for new topics
+        if (destination.isNewTopic && destination.displayName !== sanitizeCollectionName(destination.displayName)) {
+          callApi('rename_collection_label', destination.fullName, destination.displayName);
+        }
+        renderImportSuccess(r, destination.isNewTopic ? 'Topic created and imported' : 'Import complete', destination.displayName);
+        showToast((destination.isNewTopic ? 'Created and imported: ' : 'Imported into ') + destination.displayName, 'ok');
+        // Clear new topic input
+        var topicInput = document.getElementById('existingNewTopicName');
+        if (topicInput) topicInput.value = '';
+        var topicArea = document.getElementById('existingNewTopicArea');
+        if (topicArea) topicArea.style.display = 'none';
         resetImportSelections();
         loadCollections();
         return refreshImportCollections(destination.fullName);
@@ -3187,6 +3173,14 @@ document.getElementById('btnRunImport').addEventListener('click', function() {
             showToast((labelResult.msg) || ('Created ' + draft.displayName + ', but failed to save display label'), 'err');
           } else {
             showToast('Created and imported: ' + draft.displayName, 'ok');
+          }
+          // Save section header display name if provided
+          var sectionNameInput = document.getElementById('importCollectionDisplayName');
+          if (sectionNameInput && sectionNameInput.value.trim()) {
+            var sectionLabel = sectionNameInput.value.trim();
+            ownerLabels[draft.scope] = sectionLabel;
+            callApi('rename_collection_label', '__owner_' + draft.scope, sectionLabel);
+            sectionNameInput.value = '';
           }
           var nameInput = document.getElementById('importCollectionName');
           var scopeSelect = document.getElementById('importScope');
@@ -3206,13 +3200,6 @@ document.getElementById('btnRunImport').addEventListener('click', function() {
     updateImportSubmitButton();
     setImportProgress('');
   });
-});
-
-document.getElementById('newColName').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    document.getElementById('btnCreateCol').click();
-  }
 });
 
 document.getElementById('importCollectionName').addEventListener('keydown', function(e) {
@@ -4126,6 +4113,7 @@ document.getElementById('btnInstallAll').addEventListener('click', function() {
 function init() {
   initTabs();
   initAiFilters();
+  initSessionFilter();
   // Load data for the default active tab
   var activeTab = document.querySelector('.tab-btn.active');
   var tab = activeTab ? activeTab.getAttribute('data-tab') : 'dashboard';
