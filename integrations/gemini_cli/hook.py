@@ -45,7 +45,15 @@ def main():
         from ember_memory import config
 
         AI_ID = os.environ.get("EMBER_AI_ID", "gemini")
-        SESSION_ID = f"gemini-{os.getppid()}"
+        def _stable_session_id():
+            try:
+                pid = os.getppid()
+                with open(f"/proc/{pid}/stat") as f:
+                    grandparent = f.read().split(")")[-1].split()[1]
+                return f"gemini-{grandparent}"
+            except Exception:
+                return f"gemini-{os.getppid()}"
+        SESSION_ID = _stable_session_id()
         WORKSPACE = os.environ.get("EMBER_WORKSPACE", "")
         engine_db_path = os.path.join(config.DATA_DIR, "engine", "engine.db")
         os.makedirs(os.path.dirname(engine_db_path), exist_ok=True)
@@ -128,10 +136,11 @@ def main():
                     for r in results
                 ],
             }
-            # Write global + per-AI
+            # Write global + per-AI + per-session
             for path in [
                 os.path.join(config.DATA_DIR, "last_retrieval.json"),
                 os.path.join(config.DATA_DIR, f"last_retrieval_{AI_ID}.json"),
+                os.path.join(config.DATA_DIR, f"last_retrieval_{SESSION_ID}.json"),
             ]:
                 with open(path, "w") as f:
                     json.dump(snapshot, f, indent=2)

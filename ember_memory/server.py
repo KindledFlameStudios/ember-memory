@@ -1,13 +1,19 @@
 """
 Ember Memory — MCP Server
 ==========================
-Persistent semantic memory for Claude Code via Model Context Protocol.
+Persistent semantic memory for AI coding CLIs via Model Context Protocol.
 Provides tools to store, search, update, and manage knowledge across sessions.
 """
 
 import logging
 import os
+import sys
 from datetime import datetime, timezone
+
+# Ensure the ember_memory package is importable when run as a standalone script.
+_package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _package_root not in sys.path:
+    sys.path.insert(0, _package_root)
 
 from mcp.server.fastmcp import FastMCP
 from ember_memory import config
@@ -19,6 +25,8 @@ from ember_memory.core.search import retrieve
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ember-memory")
+logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
+logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
 
 # ── Init ─────────────────────────────────────────────────────────────────────
 
@@ -30,6 +38,67 @@ anything worth remembering. Collections organize memories by topic.
 
 embedder = get_embedding_provider()
 backend = get_backend_v2()
+
+
+def _current_session_id() -> str:
+    """Return a stable session ID for this MCP server process."""
+    ai = os.environ.get("EMBER_AI_ID", "codex")
+    return f"{ai}-{os.getpid()}"
+
+
+def _write_retrieval_snapshot(prompt: str, results, elapsed_ms: int = 0):
+    """Write activity log + last retrieval snapshots for the dashboard."""
+    from datetime import datetime, timezone
+    import json as _json
+
+    ai_id = _current_ai_id()
+    session_id = _current_session_id()
+
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "session": session_id,
+        "ai_id": ai_id,
+        "prompt": prompt[:120],
+        "hits": len(results),
+        "top_score": round(results[0].composite_score, 3) if results else 0,
+        "collections": list(set(r.collection for r in results)),
+        "elapsed_ms": elapsed_ms,
+    }
+    try:
+        log_path = os.path.join(config.DATA_DIR, "activity.jsonl")
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "a") as f:
+            f.write(_json.dumps(entry) + "\n")
+    except Exception:
+        pass
+
+    snapshot = {
+        "ts": entry["ts"],
+        "prompt": prompt[:200],
+        "elapsed_ms": elapsed_ms,
+        "ai_id": ai_id,
+        "results": [
+            {
+                "collection": r.collection,
+                "content": r.content,
+                "similarity": round(r.similarity, 4),
+                "composite_score": round(r.composite_score, 4),
+                "score_breakdown": getattr(r, "score_breakdown", {}),
+                "id": r.id[:32],
+            }
+            for r in results
+        ],
+    }
+    try:
+        for path in (
+            os.path.join(config.DATA_DIR, "last_retrieval.json"),
+            os.path.join(config.DATA_DIR, f"last_retrieval_{ai_id}.json"),
+            os.path.join(config.DATA_DIR, f"last_retrieval_{session_id}.json"),
+        ):
+            with open(path, "w") as f:
+                _json.dump(snapshot, f, indent=2)
+    except Exception:
+        pass
 
 
 def _current_ai_id() -> str:
@@ -212,6 +281,8 @@ def memory_find(
             prompt=query,
             ai_id=_current_ai_id(),
             workspace=_current_workspace(),
+            cwd=os.getcwd(),
+            session_id=_current_session_id(),
             backend=backend,
             embedder=embedder,
             limit=raw_limit,
@@ -229,6 +300,11 @@ def memory_find(
 
         if not filtered_results:
             return "No memories found across any collection."
+
+        try:
+            _write_retrieval_snapshot(query, filtered_results)
+        except Exception:
+            pass
 
         output = []
         for result in filtered_results:

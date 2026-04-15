@@ -1,3 +1,3 @@
-"""Ember Memory — Persistent semantic memory for Claude Code."""
+"""Ember Memory — Persistent memory for AI coding CLIs with game-AI intelligence."""
 
-__version__ = "0.1.0"
+__version__ = "2.0.0"

@@ -55,4 +55,14 @@ def composite_score(
     wc = w_conn if w_conn is not None else config.WEIGHT_CONNECTION
     wd = w_decay if w_decay is not None else config.WEIGHT_DECAY
 
-    return (similarity * ws) + (heat_boost * wh) + (connection_bonus * wc) + (decay_factor * wd)
+    raw = (similarity * ws) + (heat_boost * wh) + (connection_bonus * wc) + (decay_factor * wd)
+
+    # Guard: engine signals can boost a result but not rescue an irrelevant one.
+    # If similarity is below 0.3, cap total boost from heat+connections to 0.05.
+    # This prevents hot-but-wrong docs from outranking cold-but-right ones.
+    if similarity < 0.3:
+        sim_only = similarity * ws + decay_factor * wd
+        max_boost = 0.05
+        return min(raw, sim_only + max_boost)
+
+    return raw

@@ -29,8 +29,20 @@ from ember_memory.core.backends.loader import get_backend_v2
 LOG_FILE = os.path.join(config.DATA_DIR, "hook_debug.log")
 ACTIVITY_LOG = os.path.join(config.DATA_DIR, "activity.jsonl")
 
-# Session ID: derive from parent PID so each Claude Code instance gets a stable ID
-SESSION_ID = f"cc-{os.getppid()}"
+# Session ID: walk up process tree to find the stable shell that launched Claude Code.
+# The hook's immediate parent (claude) changes each invocation. Its parent (the terminal
+# shell) is stable for the session lifetime.
+def _stable_session_id():
+    try:
+        pid = os.getppid()  # claude process
+        with open(f"/proc/{pid}/stat") as f:
+            # Field 4 (0-indexed after splitting past comm) is ppid
+            grandparent = f.read().split(")")[-1].split()[1]
+        return f"cc-{grandparent}"
+    except Exception:
+        return f"cc-{os.getppid()}"
+
+SESSION_ID = _stable_session_id()
 
 # AI namespace — controls which collections are visible during retrieval
 AI_ID = os.environ.get("EMBER_AI_ID", "claude")
@@ -92,7 +104,11 @@ def write_activity(prompt_preview, results, elapsed_ms):
         ],
     }
     try:
-        for path in (get_last_retrieval_path(), get_last_retrieval_path(AI_ID)):
+        for path in (
+            get_last_retrieval_path(),
+            get_last_retrieval_path(AI_ID),
+            get_last_retrieval_path(SESSION_ID),
+        ):
             with open(path, "w") as f:
                 json.dump(snapshot, f, indent=2)
     except Exception:
@@ -142,6 +158,8 @@ def main():
             prompt=clean_prompt,
             ai_id=AI_ID,
             workspace=WORKSPACE,
+            cwd=os.getcwd(),
+            session_id=SESSION_ID,
             backend=backend,
             embedder=embedder,
             limit=config.MAX_HOOK_RESULTS,

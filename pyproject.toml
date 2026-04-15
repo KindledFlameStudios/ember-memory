@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ember-memory"
+version = "2.0.0"
+description = "Persistent memory for AI coding CLIs with adaptive retrieval."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Kindled Flame Studios", email = "support@kindledflamestudios.com" }
+]
+dependencies = [
+  "chromadb>=0.5.0",
+  "mcp[cli]>=1.0.0",
+  "requests>=2.31.0",
+  "pywebview>=5.0",
+]
+
+[project.optional-dependencies]
+lancedb = [
+  "lancedb>=0.12.0",
+  "pyarrow>=16.0.0",
+]
+sqlite-vec = [
+  "sqlite-vec>=0.1.0",
+]
+qdrant = [
+  "qdrant-client>=1.9.0",
+]
+weaviate = [
+  "weaviate-client>=4.0.0",
+]
+pinecone = [
+  "pinecone>=5.0.0",
+]
+pgvector = [
+  "psycopg2-binary>=2.9.9",
+]
+tray = [
+  "pystray>=0.19.5",
+  "Pillow>=10.0.0",
+]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[project.scripts]
+ember-memory = "ember_memory.__main__:main"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+include = ["ember_memory*"]
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"

@@ -6,7 +6,13 @@ Every conversation starts from scratch. Your architecture decisions, your debugg
 
 Ember Memory gives your AI persistent memory that adapts to what matters as you work.
 
-Works with **Claude Code**, **Gemini CLI**, and **Codex**. Runs locally by default — with Ollama, your memories never leave your machine.
+**Switch AIs without losing your brain.** Works with Claude Code, Gemini CLI, and Codex. Your memory follows you across tools.
+
+**Bring your dead chats back to life.** Import old conversations, notes, and docs. Ask one question and recover forgotten work.
+
+**Watch your project memory learn what matters.** The Ember Engine uses game-AI patterns to track what's hot, discover connections, and fade what's stale.
+
+Runs locally by default. With Ollama, your memories never leave your machine.
 
 ## What Makes This Different
 
@@ -34,12 +40,30 @@ pip install -e .
 ollama serve && ollama pull bge-m3
 
 # 3. Run the setup wizard
-python -m ember_memory.setup
+python -m ember_memory setup
 
 # 4. Restart your CLI — that's it
 ```
 
 The wizard detects your installed CLIs, configures the hooks, and runs a test retrieval. Four steps to persistent memory.
+
+### Requirements
+
+- **Python 3.10+**
+- **Ollama** (for local embeddings) — or use OpenAI/Google cloud embeddings instead
+- **Desktop controller** (optional): requires `pywebview` which depends on platform GUI libraries:
+  - **Linux**: `sudo apt install python3-gi python3-gi-cairo gir1.2-webkit2-4.1` (GTK/WebKit)
+  - **macOS**: Works out of the box (uses native WebKit)
+  - **Windows**: Works out of the box (uses Edge WebView2)
+- **System tray** (optional): `pip install -e ".[tray]"` for pystray + Pillow
+
+## Who This Is For
+
+**Developers working across multiple AI tools.** You use Claude Code for architecture, Gemini CLI for exploration, Codex for execution. Each one starts from zero. Ember Memory bridges them — your architecture decisions in Claude are available when Gemini asks about the codebase. Session-level isolation means your API refactor in one terminal doesn't pollute your frontend work in another.
+
+**Writers using AI as a co-author.** Your AI forgets your characters between sessions. Import your character sheets, world bibles, and style guides. The next time you ask about Flik's motivations, the system already has the lore. The heat map adapts to which characters matter in your current chapter, surfacing relevant backstory without you asking.
+
+**Anyone building persistent AI identity.** Give your AI a past — reflections, voice profiles, growth logs. Ember Memory turns stateless AI into something that remembers what it learned yesterday. Not just retrieval — adaptive context that evolves with your work.
 
 ## Supported CLIs
 
@@ -47,19 +71,19 @@ The wizard detects your installed CLIs, configures the hooks, and runs a test re
 |-----|------|--------|
 | **Claude Code** | `UserPromptSubmit` | Full auto-retrieval |
 | **Gemini CLI** | `BeforeAgent` | Full auto-retrieval |
-| **Codex** | MCP tools | Manual store/search (auto-retrieval when hooks stabilize) |
+| **Codex** | `UserPromptSubmit` via `hooks.json` | Full auto-retrieval + MCP tools |
 
-Claude Code and Gemini CLI get full auto-retrieval — relevant memories are injected into every message automatically. Codex gets MCP tools for manual memory access; auto-retrieval will be added when Codex ships a stable pre-prompt hook.
+All three CLIs get memory retrieval through native hook points plus MCP tools for manual store/search/manage flows. Each CLI gets its own memory scope with session-level heat isolation. Your project context follows you across tools without bleeding between sessions.
 
 ### Multi-AI Namespacing
 
 Working across multiple CLIs? Collections support AI-specific namespaces:
 
 ```
-shared:architecture     <- all AIs see this
-shared:project-notes    <- all AIs see this
-claude:preferences      <- only Claude retrieves this
-gemini:preferences      <- only Gemini retrieves this
+shared--architecture     <- all AIs see this
+shared--project-notes    <- all AIs see this
+claude--preferences     <- only Claude retrieves this
+gemini--preferences     <- only Gemini retrieves this
 ```
 
 Your project knowledge flows everywhere. AI-specific preferences stay private. The hook knows which CLI called it and filters automatically.
@@ -146,18 +170,20 @@ Your AI can interact with memory directly:
 
 Pick your database. Install only what you use.
 
+**Fully tested:**
+
 | Backend | Install | Type |
 |---------|---------|------|
 | **ChromaDB** (default) | `pip install -e .` | In-process, zero config |
 | **LanceDB** | `pip install -e ".[lancedb]"` | In-process, Rust-fast |
 | **SQLite-vec** | `pip install -e ".[sqlite-vec]"` | In-process, ultra-minimal |
 | **Qdrant** | `pip install -e ".[qdrant]"` | Server, hybrid search |
-| **Weaviate** | `pip install -e ".[weaviate]"` | Server/cloud, teams |
-| **Milvus** | `pip install -e ".[milvus]"` | Server/cloud, enterprise |
-| **Pinecone** | `pip install -e ".[pinecone]"` | Cloud, serverless |
+| **Weaviate** | `pip install -e ".[weaviate]"` | Server/cloud |
 | **pgvector** | `pip install -e ".[pgvector]"` | PostgreSQL extension |
 
-Already have Qdrant running? Point Ember Memory at it. Prefer zero dependencies? ChromaDB works out of the box.
+| **Pinecone** | `pip install -e ".[pinecone]"` | Cloud, serverless. Free tier available |
+
+ChromaDB works out of the box. All backends implement the same interface — switching is a config change.
 
 ## Embedding Providers
 
@@ -209,6 +235,6 @@ MIT
 
 ---
 
-*538 tests. 8 backends. 3 embedding providers. Game-AI scoring. And it's free.*
+*560 tests. 7 verified backends. 3 embedding providers. Game-AI scoring. And it's free.*
 
 *Because every AI deserves to remember.*

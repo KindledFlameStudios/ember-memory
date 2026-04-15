@@ -62,7 +62,7 @@ def create_tray():
 
     def set_mode_per_cli(icon, item):
         try:
-            _get_engine_state().set_config("heat_mode", "per-cli")
+            _get_engine_state().set_config("heat_mode", "per_cli")
         except Exception:
             pass
 
@@ -70,7 +70,7 @@ def create_tray():
         return get_heat_mode() == "universal"
 
     def is_per_cli(item):
-        return get_heat_mode() == "per-cli"
+        return get_heat_mode() == "per_cli"
 
     def is_cli_active(ai_id):
         def check(item):

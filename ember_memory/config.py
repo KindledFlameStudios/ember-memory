@@ -86,5 +86,10 @@ WEIGHT_HEAT = float(_get("EMBER_WEIGHT_HEAT", "0.25"))
 WEIGHT_CONNECTION = float(_get("EMBER_WEIGHT_CONNECTION", "0.20"))
 WEIGHT_DECAY = float(_get("EMBER_WEIGHT_DECAY", "0.15"))
 
+# -- Namespace mode --
+# "scoped" = each CLI sees shared + its own private collections (default)
+# "open" = all CLIs see all collections (single AI setup)
+NAMESPACE_MODE = _get("EMBER_NAMESPACE_MODE", "scoped")
+
 # -- Context tag --
 CONTEXT_TAG = _get("EMBER_CONTEXT_TAG", "ember-memory")

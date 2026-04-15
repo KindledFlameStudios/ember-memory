@@ -129,7 +129,9 @@ class PineconeBackend(MemoryBackend):
         except Exception:
             index_dim = dimension
 
+        # Pinecone rejects all-zero vectors, use near-zero with one small value
         zero_vector: list[float] = [0.0] * index_dim
+        zero_vector[0] = 1e-7
         meta_payload: dict = {
             "ember_collection_name": name,
             "ember_dimension": dimension,

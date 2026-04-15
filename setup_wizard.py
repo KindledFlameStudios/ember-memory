@@ -59,6 +59,7 @@ def load_config():
         "similarity_threshold": "0.45",
         "max_results": "5",
         "max_preview": "800",
+        "namespace_mode": "scoped",
     }
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'r') as f:
@@ -94,6 +95,7 @@ def save_config(config):
         f"EMBER_SIMILARITY_THRESHOLD={config['similarity_threshold']}",
         f"EMBER_MAX_HOOK_RESULTS={config['max_results']}",
         f"EMBER_MAX_PREVIEW_CHARS={config['max_preview']}",
+        f"EMBER_NAMESPACE_MODE={config.get('namespace_mode', 'scoped')}",
     ]
     with open(CONFIG_FILE, 'w') as f:
         f.write("\n".join(lines) + "\n")
@@ -101,6 +103,17 @@ def save_config(config):
 
 def _codex_server_command():
     """Return a stdio MCP launch command that works from a source checkout."""
+    bootstrap = (
+        "import sys; "
+        f"sys.path.insert(0, {EMBER_ROOT!r}); "
+        "from ember_memory.server import mcp; "
+        "mcp.run(transport='stdio')"
+    )
+    return sys.executable, ["-c", bootstrap]
+
+
+def _source_server_command():
+    """Return a generic stdio MCP launch command for this source checkout."""
     bootstrap = (
         "import sys; "
         f"sys.path.insert(0, {EMBER_ROOT!r}); "
@@ -627,6 +640,7 @@ class EmberAPI:
         if shutil.which("gemini"):
             try:
                 gemini_hook_path = os.path.join(EMBER_ROOT, "integrations", "gemini_cli", "hook.py")
+                gemini_command, gemini_args = _source_server_command()
                 gs = {}
                 if os.path.exists(GEMINI_SETTINGS):
                     with open(GEMINI_SETTINGS, 'r') as f:
@@ -636,8 +650,12 @@ class EmberAPI:
                 if "mcpServers" not in gs:
                     gs["mcpServers"] = {}
                 gs["mcpServers"]["ember-memory"] = {
-                    "command": sys.executable,
-                    "args": ["-m", "ember_memory.server"],
+                    "command": gemini_command,
+                    "args": gemini_args,
+                    "env": {
+                        "EMBER_AI_ID": "gemini",
+                        "EMBER_DATA_DIR": data_dir,
+                    },
                     "timeout": 30000
                 }
 
@@ -1126,9 +1144,20 @@ class EmberAPI:
             connection_rows = get_dashboard_connections(state, ai_id=ai_id, min_strength=0.0)
             total_connections = len(connection_rows)
             established = sum(1 for row in connection_rows if float(row["strength"]) >= 3.0)
+
+            # For session-scoped views, count ALL memories ever touched (including decayed)
+            total_tracked = len(all_heat)
+            selected = normalize_dashboard_ai_id(ai_id)
+            if selected and (selected.startswith("cc-") or selected.startswith("gemini-") or selected.startswith("codex-")):
+                all_ever = state._conn.execute(
+                    "SELECT COUNT(DISTINCT memory_id) FROM heat_map WHERE ai_id = ?",
+                    (selected,),
+                ).fetchone()[0]
+                total_tracked = max(total_tracked, all_ever)
+
             return {"ok": True, "stats": {
                 "tick_count": state.get_tick(),
-                "total_memories_tracked": len(all_heat),
+                "total_memories_tracked": total_tracked,
                 "hot_memories": hot_count,
                 "total_connections": total_connections,
                 "established_connections": established,

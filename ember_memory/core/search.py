@@ -11,6 +11,7 @@ import re
 from difflib import SequenceMatcher
 from dataclasses import dataclass, field
 
+from ember_memory import config
 from ember_memory.core.namespaces import get_visible_collections
 from ember_memory.core.backends.base import MemoryBackend
 from ember_memory.core.embeddings.base import EmbeddingProvider
@@ -116,7 +117,9 @@ def retrieve(
     # 1. Get visible collections for this AI
     all_collections = backend.list_collections()
     all_names = [c["name"] for c in all_collections if c.get("count", 0) > 0]
-    visible = get_visible_collections(all_names, ai_id=ai_id)
+    # "open" namespace mode bypasses AI filtering — all collections visible
+    effective_ai_id = "*" if config.NAMESPACE_MODE == "open" else ai_id
+    visible = get_visible_collections(all_names, ai_id=effective_ai_id)
 
     if engine_db_path and visible:
         engine = _get_engine(engine_db_path)

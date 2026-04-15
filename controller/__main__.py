@@ -1,3 +1,7 @@
-"""Launch the system tray: python -m controller"""
+"""Launch the system tray: python -m controller."""
+
 from controller.tray import main
-main()
+
+
+if __name__ == "__main__":
+    main()

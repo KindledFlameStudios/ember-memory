@@ -12,8 +12,7 @@ def get_backend_v2(backend: str | None = None, **kwargs) -> MemoryBackend:
     Args:
         backend:  Backend name. Defaults to ``config.BACKEND`` (env/config.env).
                   Supported: ``"chromadb"``, ``"qdrant"``, ``"lancedb"``,
-                  ``"sqlite-vec"``, ``"weaviate"``, ``"pinecone"``, ``"milvus"``,
-                  ``"pgvector"``.
+                  ``"sqlite-vec"``, ``"weaviate"``, ``"pinecone"``, ``"pgvector"``.
         **kwargs: Optional overrides passed to the backend constructor. Common
                   keys: ``data_dir``, ``url``, ``api_key``, ``in_memory``,
                   ``db_path``, ``index_name``, ``uri``, ``token``, ``dsn``,
@@ -68,14 +67,6 @@ def get_backend_v2(backend: str | None = None, **kwargs) -> MemoryBackend:
         )
         b.connect()
         return b
-    elif backend == "milvus":
-        from ember_memory.core.backends.milvus_backend import MilvusBackend
-        b = MilvusBackend(
-            uri=kwargs.get("uri", "http://localhost:19530"),
-            token=kwargs.get("token", ""),
-        )
-        b.connect()
-        return b
     elif backend == "pgvector":
         from ember_memory.core.backends.pgvector_backend import PgvectorBackend
         b = PgvectorBackend(
@@ -91,5 +82,5 @@ def get_backend_v2(backend: str | None = None, **kwargs) -> MemoryBackend:
     else:
         raise ValueError(
             f"Unknown backend: '{backend}'. Available: chromadb, qdrant, lancedb, "
-            f"sqlite-vec, weaviate, pinecone, milvus, pgvector"
+            f"sqlite-vec, weaviate, pinecone, pgvector"
         )

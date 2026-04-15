@@ -901,7 +901,6 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
               <option value="weaviate">Weaviate</option>
               <option value="pinecone">Pinecone</option>
               <option value="pgvector">pgvector</option>
-              <option value="milvus">Milvus</option>
               <option value="sqlite_vss">SQLite VSS</option>
               <option value="in_memory">In-Memory</option>
             </select>
@@ -915,6 +914,22 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
               <input type="text" class="wide" id="dataDir" />
               <button class="btn btn-secondary btn-sm" id="btnBrowse">Browse</button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Namespace Mode</div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Collection Visibility</div>
+              <div class="setting-hint">Controls which collections each CLI session can access</div>
+            </div>
+            <select id="namespaceModeSelect">
+              <option value="scoped">Scoped (default) — each CLI sees shared + its own private collections</option>
+              <option value="open">Open — all CLIs see all collections (single AI setup)</option>
+            </select>
           </div>
         </div>
       </div>
@@ -1457,7 +1472,7 @@ function loadDashboard() {
       var s = r.stats || {};
       var memCount  = s.total_memories_tracked || 0;
       var hotCount  = s.hot_memories           || 0;
-      var connCount = s.established_connections || 0;
+      var connCount = s.total_connections || 0;
       var tickCount = s.tick_count             || 0;
       var heatMode  = s.heat_mode              || 'universal';
 
@@ -3840,6 +3855,9 @@ function loadSettings() {
     var be = document.getElementById('backendSelect');
     if (be && r.backend) be.value = r.backend;
 
+    var nm = document.getElementById('namespaceModeSelect');
+    if (nm) nm.value = r.namespace_mode || 'scoped';
+
     var dd = document.getElementById('dataDir');
     if (dd && r.data_dir) dd.value = r.data_dir;
 
@@ -3950,6 +3968,7 @@ document.getElementById('btnSaveSettings').addEventListener('click', function() 
   var config = {
     embedding_provider:  currentProvider,
     backend:             document.getElementById('backendSelect').value,
+    namespace_mode:      document.getElementById('namespaceModeSelect').value,
     data_dir:            document.getElementById('dataDir').value.trim(),
     similarity_threshold: safeNum(document.getElementById('simThreshold').value, 0.7),
     max_results:          parseInt(document.getElementById('maxResults').value, 10) || 10,

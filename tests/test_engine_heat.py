@@ -37,8 +37,8 @@ def test_mode_default_universal(heat):
     assert heat.get_mode() == "universal"
 
 def test_mode_switch(heat):
-    heat.set_mode("per-cli")
-    assert heat.get_mode() == "per-cli"
+    heat.set_mode("per_cli")
+    assert heat.get_mode() == "per_cli"
 
 def test_ignore_default_false(heat):
     assert heat.is_ignored("codex") is False
@@ -50,7 +50,7 @@ def test_ignore_toggle(heat):
     assert heat.is_ignored("codex") is False
 
 def test_per_cli_isolation(heat):
-    heat.set_mode("per-cli")
+    heat.set_mode("per_cli")
     heat.record_access("doc1", ai_id="claude")
     assert heat.get_boost("doc1", ai_id="claude") > 0.0
     assert heat.get_boost("doc1", ai_id="gemini") == 0.0

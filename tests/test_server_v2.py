@@ -1,7 +1,7 @@
 """Tests for the v2-based MCP server.
 
 Verifies that:
-- create_collection with scope="claude" produces a "claude:name" collection
+- create_collection with scope="claude" produces a "claude--name" collection
 - create_collection with scope="shared" produces just "name"
 - The server initialises with the v2 backend and embedder (mocked)
 """
@@ -55,9 +55,9 @@ class TestCreateCollectionScope:
 
             result = create_collection("preferences", scope="claude")
 
-        assert "claude:preferences" in result
+        assert "claude--preferences" in result
         mock_backend.create_collection.assert_called_once_with(
-            "claude:preferences",
+            "claude--preferences",
             dimension=mock_embedder.dimension(),
             description=None,
         )
@@ -76,7 +76,7 @@ class TestCreateCollectionScope:
             result = create_collection("notes", scope="shared")
 
         assert "notes" in result
-        # The resolved name should NOT be "shared:notes" — the shared scope
+        # The resolved name should NOT be "shared--notes" — the shared scope
         # returns just the bare topic name.
         call_args = mock_backend.create_collection.call_args
         assert call_args[0][0] == "notes"
@@ -110,9 +110,9 @@ class TestCreateCollectionScope:
 
             result = create_collection("log", scope="gemini")
 
-        assert "gemini:log" in result
+        assert "gemini--log" in result
         mock_backend.create_collection.assert_called_once_with(
-            "gemini:log",
+            "gemini--log",
             dimension=mock_embedder.dimension(),
             description=None,
         )

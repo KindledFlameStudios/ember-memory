@@ -2,40 +2,68 @@
 
 Ember Memory integration for OpenAI's Codex CLI.
 
-## Status
+## What You Get
 
-**MCP tools: Fully supported.** Your AI can store, search, and manage memories via MCP tool calls.
+- **MCP tools** for store, search, hand-off, and collection management
+- **Ember Engine** scoring on all searches — adapts to your workflow
+- **Shared collections** — project knowledge from Claude Code and Gemini CLI is available here
+- **Auto-retrieval** via Codex lifecycle hooks (`hooks.json`)
 
-**Auto-retrieval: Not yet available.** Codex hooks are experimental and currently cannot inject context into the model's prompt. When Codex ships a stable pre-prompt hook with context injection, an auto-retrieval adapter will be added (~50 lines).
+## Current Status
 
-## MCP Setup
+| Feature | Status |
+|---------|--------|
+| MCP tools (store/search/manage) | Full support |
+| Engine scoring on searches | Full support |
+| Auto-retrieval | Full support via `UserPromptSubmit` hook |
+| Per-session heat isolation | Full support |
+
+Codex displays ember-memory results as an inline block in chat, giving visibility into what memories are being retrieved.
+
+## Cross-CLI Continuity
+
+Decisions stored in Claude Code? Architecture docs from Gemini? They're here in your shared collections. Use `memory_handoff` to generate a context summary from another CLI session.
+
+## Setup
 
 Add to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.ember-memory]
 command = "python3"
-args = ["-m", "ember_memory.server"]
+args = ["-c", "import sys; sys.path.insert(0, '/path/to/ember-memory'); from ember_memory.server import mcp; mcp.run(transport='stdio')"]
 startup_timeout_sec = 15
 tool_timeout_sec = 30
 
 [mcp_servers.ember-memory.env]
 EMBER_DATA_DIR = "~/.ember-memory"
 EMBER_AI_ID = "codex"
+
+[features]
+codex_hooks = true
 ```
 
-For project-scoped config, add to `.codex/config.toml` (requires trusted project).
+Add `~/.codex/hooks.json`:
 
-## Usage
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /path/to/ember-memory/integrations/codex/hook.py",
+            "timeout": 10,
+            "statusMessage": "Retrieving Ember Memory context"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
 
-Once configured, your AI can use these tools directly:
+## Works With AGENTS.md
 
-- **"Remember that we're using Redis for caching"** → calls `memory_store`
-- **"What do we know about the auth system?"** → calls `memory_find`
-- **"Show my memory collections"** → calls `list_collections`
-
-The Ember Engine scoring (heat, connections, decay) applies to all manual searches — memories you reference often will still rank higher over time.
-
-## AGENTS.md Compatibility
-
-Codex loads `AGENTS.md` at session start for static context. Ember Memory is complementary — it provides dynamic, searchable memory via MCP tools during the session. They don't conflict.
+Codex loads `AGENTS.md` at session start for static context. Ember Memory adds dynamic, searchable memory on top. They complement each other — static identity + adaptive retrieval.

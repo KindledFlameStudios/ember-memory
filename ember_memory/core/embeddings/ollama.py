@@ -25,10 +25,11 @@ class OllamaProvider(EmbeddingProvider):
 
     def __init__(self, url: str = "http://localhost:11434/api/embed",
                  model: str = "bge-m3"):
-        self._url = url
+        # Normalize: always use /api/embed (the modern endpoint)
+        self._url = url.replace("/api/embeddings", "/api/embed")
         self._model = model
         self._dim = _MODEL_DIMS.get(model, 1024)
-        self._base_url = url.rsplit("/api/", 1)[0] if "/api/" in url else url
+        self._base_url = self._url.rsplit("/api/", 1)[0] if "/api/" in self._url else self._url
 
     def embed(self, text: str) -> list[float]:
         """Embed a single piece of text via Ollama.

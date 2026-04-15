@@ -1,10 +1,19 @@
 # Gemini CLI Integration
 
-Ember Memory integration for Google's Gemini CLI.
+Full auto-retrieval integration for Google's Gemini CLI.
 
-## Hook
-The `BeforeAgent` hook fires on every user message, calling `core.search.retrieve()` with `ai_id="gemini"`.
-Context is injected via `hookSpecificOutput.additionalContext`.
+## What You Get
+
+- **Auto-retrieval** on every message via `BeforeAgent` hook
+- **MCP tools** for manual store, search, and hand-off
+- **Ember Engine** scoring adapts to your workflow
+- **Shared + private collections** — project knowledge flows across CLIs
+
+## Cross-CLI Continuity
+
+Work started in Claude Code? Switch to Gemini — your shared project memories are already here. Private collections stay private to each CLI.
+
+Generate a hand-off packet in Claude Code with `memory_handoff`, then pick it up here.
 
 ## Setup
 
@@ -13,29 +22,16 @@ Add to `~/.gemini/settings.json`:
 ```json
 {
   "hooks": {
-    "BeforeAgent": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "name": "ember-memory",
-            "type": "command",
-            "command": "python3 /path/to/ember-memory/integrations/gemini_cli/hook.py",
-            "timeout": 3000
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-## MCP Server
-
-Add to `~/.gemini/settings.json`:
-
-```json
-{
+    "BeforeAgent": [{
+      "matcher": "*",
+      "hooks": [{
+        "name": "ember-memory",
+        "type": "command",
+        "command": "python3 /path/to/ember-memory/integrations/gemini_cli/hook.py",
+        "timeout": 10000
+      }]
+    }]
+  },
   "mcpServers": {
     "ember-memory": {
       "command": "python3",
@@ -46,4 +42,4 @@ Add to `~/.gemini/settings.json`:
 }
 ```
 
-Note: Do NOT use underscores in the MCP server alias name — use hyphens instead.
+Note: Use hyphens in MCP server names, not underscores.

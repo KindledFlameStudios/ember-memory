@@ -31,15 +31,15 @@ def test_returns_retrieval_results():
 
 def test_filters_by_namespace():
     backend = _mock_backend(
-        ["shared:notes", "claude:prefs", "gemini:prefs"],
+        ["shared--notes", "claude--prefs", "gemini--prefs"],
         [{"id": "d1", "content": "x", "metadata": {}, "similarity": 0.9}],
     )
     retrieve("query", ai_id="claude", backend=backend, embedder=_mock_embedder())
     searched = [call.kwargs.get("collection", call.args[0] if call.args else None)
                 for call in backend.search.call_args_list]
-    assert "shared:notes" in searched
-    assert "claude:prefs" in searched
-    assert "gemini:prefs" not in searched
+    assert "shared--notes" in searched
+    assert "claude--prefs" in searched
+    assert "gemini--prefs" not in searched
 
 
 def test_filters_below_threshold():

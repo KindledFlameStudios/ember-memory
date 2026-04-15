@@ -1,7 +1,7 @@
 {
   "name": "ember-memory",
-  "version": "1.0.0",
-  "description": "Persistent semantic memory for Claude Code. Local vector database with auto-retrieval — your AI remembers across sessions.",
+  "version": "2.0.0",
+  "description": "Persistent memory for AI coding CLIs with game-AI intelligence. Works with Claude Code, Gemini CLI, and Codex. 8 backends, 3 embedding providers, adaptive scoring.",
   "author": {
     "name": "Kindled Flame Studios",
     "email": "support@kindledflamestudios.com",
@@ -10,7 +10,7 @@
   "homepage": "https://github.com/KindledFlameStudios/ember-memory",
   "repository": "https://github.com/KindledFlameStudios/ember-memory",
   "license": "MIT",
-  "keywords": ["memory", "semantic-search", "chromadb", "ollama", "rag", "auto-retrieval", "local", "privacy"],
+  "keywords": ["memory", "semantic-search", "multi-cli", "game-ai", "adaptive-scoring", "chromadb", "qdrant", "lancedb", "pinecone", "ollama", "openai", "rag", "auto-retrieval", "local", "privacy"],
   "hooks": "./hooks.json",
   "mcpServers": "./.mcp.json"
 }
