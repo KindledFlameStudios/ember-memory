@@ -1,3 +1,6 @@
+# ember-memory Fort
+# Public Engine, Private Guides.
+
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -5,6 +8,18 @@ dist/
 build/
 *.egg
 .env
+.env.*
+.claude/
+.cline/
 *.log
 .venv/
 venv/
+.DS_Store
+
+# Internal Forge Guides & Research
+FORGE.md
+docs/superpowers/
+docs/research/
+**/*.bak
+**/*.tmp
+pushgit.sh
