@@ -31,6 +31,8 @@ ember-memory
 
 Open **CLI Status**, click **Run Install**, then click **Test Hooks**. The app writes the Claude Code MCP server and `UserPromptSubmit` hook for you.
 
+These files are Claude-specific integration assets for manual/plugin-style installs. Normal v2 users should use the desktop controller so Claude Code, Gemini CLI, and Codex are configured from one place.
+
 Or manually — add to `~/.claude/settings.json`:
 ```json
 {

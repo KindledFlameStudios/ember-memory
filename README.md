@@ -100,7 +100,7 @@ ember-memory uninstall-desktop
 |-----|------|--------|
 | **Claude Code** | `UserPromptSubmit` | Full auto-retrieval |
 | **Gemini CLI** | `BeforeAgent` | Full auto-retrieval |
-| **Codex** | `UserPromptSubmit` via `hooks.json` | Full auto-retrieval + MCP tools |
+| **Codex** | `UserPromptSubmit` via Codex hooks | Full auto-retrieval + MCP tools |
 
 All three CLIs get memory retrieval through native hook points plus MCP tools for manual store/search/manage flows. Each CLI gets its own memory scope with session-level heat isolation. Your project context follows you across tools without bleeding between sessions.
 
