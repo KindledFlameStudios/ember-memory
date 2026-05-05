@@ -7,7 +7,7 @@ Ember Memory integration for OpenAI's Codex CLI.
 - **MCP tools** for store, search, hand-off, and collection management
 - **Ember Engine** scoring on all searches — adapts to your workflow
 - **Shared collections** — project knowledge from Claude Code and Gemini CLI is available here
-- **Auto-retrieval** via Codex lifecycle hooks (`hooks.json`)
+- **Auto-retrieval** via Codex lifecycle hooks
 
 ## Current Status
 
