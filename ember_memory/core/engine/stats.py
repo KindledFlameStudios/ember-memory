@@ -1,6 +1,7 @@
 """Engine stats — read-only summary for controller UI and tray."""
 
 from ember_memory.core.engine.state import EngineState
+from ember_memory.core.engine.scopes import get_all_cli_ids
 
 
 def get_engine_stats(state: EngineState) -> dict:
@@ -25,6 +26,6 @@ def get_engine_stats(state: EngineState) -> dict:
         "heat_mode": state.get_config("heat_mode", "universal"),
         "ignored_clis": {
             ai_id: state.get_config(f"heat_ignore_{ai_id}", "false") == "true"
-            for ai_id in ["claude", "gemini", "codex"]
+            for ai_id in get_all_cli_ids(state)
         },
     }

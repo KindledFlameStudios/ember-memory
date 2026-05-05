@@ -127,7 +127,7 @@ def test_engine_records_co_occurrence(engine_dir):
 
 
 def test_engine_ignored_ai_gets_no_heat_boost(engine_dir):
-    """An ignored ai_id should not receive a heat boost (boost forced to 0)."""
+    """An ignored ai_id should fall back to basic RAG without engine learning."""
     db_path = os.path.join(engine_dir, "engine.db")
 
     # Pre-heat under the "ignored" ai
@@ -150,9 +150,10 @@ def test_engine_ignored_ai_gets_no_heat_boost(engine_dir):
         engine_db_path=db_path,
     )
 
-    # Both should score the same because heat boost is suppressed for ignored_ai
+    # Both should score the same because adaptive Engine scoring is bypassed.
     assert len(results) == 2
     assert results[0].composite_score == results[1].composite_score
+    assert state.get_connection("doc1", "doc2") == 0.0
 
 
 def test_engine_creates_directory_if_missing(tmp_path):
@@ -191,6 +192,33 @@ def test_engine_failure_falls_back_gracefully():
     )
     assert len(results) == 1
     assert results[0].composite_score == results[0].similarity
+
+
+def test_custom_cli_private_collections_respected(engine_dir):
+    """Registered custom CLI collections should stay private during retrieval."""
+    db_path = os.path.join(engine_dir, "engine.db")
+    state = EngineState(db_path=db_path)
+    state.set_config("custom_clis", json.dumps([{"id": "openclaw", "name": "OpenClaw"}]))
+
+    backend = MagicMock()
+    backend.list_collections.return_value = [
+        {"name": "notes", "count": 1},
+        {"name": "openclaw--prefs", "count": 1},
+        {"name": "claude--prefs", "count": 1},
+    ]
+    backend.search.side_effect = lambda collection, query_embedding, limit: [
+        {"id": f"{collection}-doc", "content": collection, "metadata": {}, "similarity": 0.8}
+    ]
+
+    results = retrieve(
+        "query",
+        ai_id="claude",
+        backend=backend,
+        embedder=_mock_embedder(),
+        engine_db_path=db_path,
+    )
+
+    assert [result.collection for result in results] == ["notes", "claude--prefs"]
 
 
 def test_engine_tick_increments_on_each_retrieval(engine_dir):

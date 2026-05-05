@@ -54,3 +54,17 @@ def test_per_cli_isolation(heat):
     heat.record_access("doc1", ai_id="claude")
     assert heat.get_boost("doc1", ai_id="claude") > 0.0
     assert heat.get_boost("doc1", ai_id="gemini") == 0.0
+
+
+def test_ignored_cli_cools_session_scoped_heat(tmp_path):
+    state = EngineState(db_path=str(tmp_path / "engine.db"))
+    heat = HeatMap(state)
+    heat.set_mode("per_cli")
+
+    heat.record_access("doc1", ai_id="codex", session_id="codex-thread-1")
+    before = state.get_heat("doc1", ai_id="codex-thread-1")
+
+    heat.set_ignored("codex", True)
+
+    after = state.get_heat("doc1", ai_id="codex-thread-1")
+    assert after < before

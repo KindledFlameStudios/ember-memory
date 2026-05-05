@@ -19,6 +19,7 @@ from mcp.server.fastmcp import FastMCP
 from ember_memory import config
 from ember_memory.core.embeddings.loader import get_embedding_provider
 from ember_memory.core.backends.loader import get_backend_v2
+from ember_memory.core.engine.scopes import aggregate_heat_by_memory, get_all_cli_ids
 from ember_memory.core.search import retrieve
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -36,8 +37,24 @@ across sessions — architecture decisions, project context, debugging insights,
 anything worth remembering. Collections organize memories by topic.
 """)
 
-embedder = get_embedding_provider()
-backend = get_backend_v2()
+embedder = None
+backend = None
+
+
+def _get_embedder():
+    """Initialize the embedding provider on first tool use."""
+    global embedder
+    if embedder is None:
+        embedder = get_embedding_provider()
+    return embedder
+
+
+def _get_backend():
+    """Initialize the storage backend on first tool use."""
+    global backend
+    if backend is None:
+        backend = get_backend_v2()
+    return backend
 
 
 def _current_session_id() -> str:
@@ -148,7 +165,6 @@ def _format_search_result(
 
 def _get_hot_memories(limit: int, ai_id: str) -> tuple[list[dict], list[str]]:
     """Return the hottest tracked memories plus a deduped topic list."""
-    from ember_memory.core.engine.heat import HeatMap
     from ember_memory.core.engine.state import EngineState
     from ember_memory.core.namespaces import parse_collection_name
 
@@ -157,16 +173,18 @@ def _get_hot_memories(limit: int, ai_id: str) -> tuple[list[dict], list[str]]:
         return [], []
 
     state = EngineState(db_path=db_path)
-    heat_map = HeatMap(state)
-    heat_scope = ai_id if heat_map.get_mode() == "per_cli" else None
+    if state.get_config(f"heat_ignore_{ai_id}", "false") == "true":
+        return [], []
+
     ranked_heat = sorted(
-        state.get_all_heat(ai_id=heat_scope).items(),
+        aggregate_heat_by_memory(state, ai_id=ai_id).items(),
         key=lambda item: item[1],
         reverse=True,
     )
 
     hot_memories = []
     hot_topics = []
+    extra_ai_ids = get_all_cli_ids(state)
     for memory_id, heat in ranked_heat:
         meta = state.get_memory_meta(memory_id) or {}
         collection = meta.get("collection", "unknown")
@@ -179,7 +197,11 @@ def _get_hot_memories(limit: int, ai_id: str) -> tuple[list[dict], list[str]]:
                 "heat": heat,
             }
         )
-        topic = parse_collection_name(collection)[1] if collection != "unknown" else memory_id
+        topic = (
+            parse_collection_name(collection, extra_ai_ids=extra_ai_ids)[1]
+            if collection != "unknown"
+            else memory_id
+        )
         if topic not in hot_topics:
             hot_topics.append(topic)
         if len(hot_memories) >= limit:
@@ -253,8 +275,8 @@ def memory_store(
     if source:
         metadata["source"] = source
 
-    embedding = embedder.embed(content)
-    count = backend.insert(col_name, doc_id, content, embedding, metadata)
+    embedding = _get_embedder().embed(content)
+    count = _get_backend().insert(col_name, doc_id, content, embedding, metadata)
     return f"Stored in '{col_name}' (id: {doc_id}). Collection now has {count} entries."
 
 
@@ -283,8 +305,8 @@ def memory_find(
             workspace=_current_workspace(),
             cwd=os.getcwd(),
             session_id=_current_session_id(),
-            backend=backend,
-            embedder=embedder,
+            backend=_get_backend(),
+            embedder=_get_embedder(),
             limit=raw_limit,
             similarity_threshold=config.SIMILARITY_THRESHOLD,
             engine_db_path=_engine_db_path(),
@@ -321,8 +343,8 @@ def memory_find(
         return "\n\n---\n\n".join(output)
 
     col_name = collection or config.DEFAULT_COLLECTION
-    query_embedding = embedder.embed(query)
-    results = backend.search(col_name, query_embedding, n)
+    query_embedding = _get_embedder().embed(query)
+    results = _get_backend().search(col_name, query_embedding, n)
 
     if not results:
         return f"No matching memories found in '{col_name}'."
@@ -366,8 +388,8 @@ def memory_handoff(topic: str = "", limit: int = 5) -> str:
             prompt=topic,
             ai_id=ai_id,
             workspace=_current_workspace(),
-            backend=backend,
-            embedder=embedder,
+            backend=_get_backend(),
+            embedder=_get_embedder(),
             limit=packet_limit,
             similarity_threshold=config.SIMILARITY_THRESHOLD,
             engine_db_path=_engine_db_path(),
@@ -404,7 +426,7 @@ def memory_delete(
         collection: Collection containing the memory.
     """
     col_name = collection or config.DEFAULT_COLLECTION
-    if not backend.delete(col_name, doc_id):
+    if not _get_backend().delete(col_name, doc_id):
         return f"No memory with ID '{doc_id}' found in '{col_name}'."
     return f"Deleted '{doc_id}' from '{col_name}'."
 
@@ -427,7 +449,7 @@ def memory_update(
         source: New source attribution. Pass empty string to clear.
     """
     col_name = collection or config.DEFAULT_COLLECTION
-    existing = backend.get(col_name, doc_id)
+    existing = _get_backend().get(col_name, doc_id)
     if not existing:
         return f"No memory with ID '{doc_id}' found in '{col_name}'."
 
@@ -438,15 +460,15 @@ def memory_update(
     if source is not None:
         metadata["source"] = source
 
-    embedding = embedder.embed(content)
-    backend.update(col_name, doc_id, content, embedding, metadata)
+    embedding = _get_embedder().embed(content)
+    _get_backend().update(col_name, doc_id, content, embedding, metadata)
     return f"Updated '{doc_id}' in '{col_name}'."
 
 
 @mcp.tool()
 def list_collections() -> str:
     """List all memory collections and their entry counts."""
-    collections = backend.list_collections()
+    collections = _get_backend().list_collections()
     if not collections:
         return "No collections yet. Use memory_store to create one."
 
@@ -470,7 +492,11 @@ def create_collection(
     """
     from ember_memory.core.namespaces import resolve_collection_name
     full_name = resolve_collection_name(name, scope)
-    backend.create_collection(full_name, dimension=embedder.dimension(), description=description)
+    _get_backend().create_collection(
+        full_name,
+        dimension=_get_embedder().dimension(),
+        description=description,
+    )
     return f"Collection '{full_name}' created (scope: {scope})."
 
 
@@ -483,11 +509,12 @@ def delete_collection(name: str, confirm: bool = False) -> str:
         confirm: Must be True to delete a non-empty collection.
     """
     # Check count first
-    count = backend.collection_count(name)
+    backend_instance = _get_backend()
+    count = backend_instance.collection_count(name)
     if count > 0 and not confirm:
         return f"Collection '{name}' has {count} entries. Set confirm=True to delete."
 
-    deleted = backend.delete_collection(name)
+    deleted = backend_instance.delete_collection(name)
     if deleted == 0 and count == 0:
         return f"Collection '{name}' does not exist."
     return f"Collection '{name}' deleted ({deleted} entries removed)."
@@ -501,12 +528,13 @@ def collection_stats(collection: str | None = None) -> str:
         collection: Collection name (default: general).
     """
     col_name = collection or config.DEFAULT_COLLECTION
-    count = backend.collection_count(col_name)
+    backend_instance = _get_backend()
+    count = backend_instance.collection_count(col_name)
 
     if count == 0:
         return f"Collection '{col_name}' is empty."
 
-    entries = backend.collection_peek(col_name, limit=5)
+    entries = backend_instance.collection_peek(col_name, limit=5)
     recent = []
     for entry in entries:
         meta = entry["metadata"]

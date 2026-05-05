@@ -1,1020 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ember Memory Controller</title>
-<style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --bg-void:     #050505;
-  --bg-deep:     #0a0908;
-  --bg-surface:  #111010;
-  --bg-raised:   #191410;
-  --bg-elevated: #211c14;
-
-  --ember:       #FF7820;
-  --ember-mid:   #FFA040;
-  --ember-glow:  #FFD080;
-  --ember-dim:   #a85a0a;
-  --ember-hot:   #FF4500;
-  --coal:        #3d2a14;
-
-  --fg:          #e8ddd0;
-  --fg-dim:      #a89880;
-  --fg-muted:    #6b5d4f;
-  --fg-faint:    #3a332b;
-
-  --success:     #5ecc8a;
-  --error:       #e86060;
-  --warning:     #d4a030;
-
-  --border:      #242018;
-  --border-em:   rgba(255,120,32,0.18);
-  --radius:      8px;
-  --radius-sm:   5px;
-
-  --font-ui:   -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-}
-
-html, body {
-  height: 100%;
-  overflow: hidden;
-  background: var(--bg-void);
-  color: var(--fg);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  user-select: none;
-}
-
-.shell {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-
-/* Header */
-.header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 20px;
-  background: var(--bg-deep);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.header-logo { display: flex; align-items: center; gap: 8px; }
-.logo-flame  { width: 26px; height: 26px; flex-shrink: 0; }
-.header-title {
-  font-size: 15px; font-weight: 700; letter-spacing: -0.3px;
-  background: linear-gradient(90deg, var(--ember-mid), var(--ember-glow));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-}
-.header-sub {
-  font-size: 11px; color: var(--fg-muted); margin-left: 4px;
-  -webkit-text-fill-color: var(--fg-muted);
-}
-.header-spacer { flex: 1; }
-.engine-pill {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 10px; background: var(--bg-raised);
-  border: 1px solid var(--border); border-radius: 20px;
-  font-size: 11px; color: var(--fg-muted);
-}
-.engine-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--fg-faint); transition: background 0.4s, box-shadow 0.4s;
-}
-.engine-dot.live { background: var(--ember); box-shadow: 0 0 8px rgba(255,120,32,0.6); }
-
-/* Tab bar */
-.tab-bar {
-  display: flex; background: var(--bg-deep);
-  border-bottom: 1px solid var(--border); padding: 0 20px; gap: 2px; flex-shrink: 0;
-}
-.tab-btn {
-  padding: 9px 18px; font-size: 12.5px; font-weight: 600; color: var(--fg-muted);
-  background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer;
-  transition: color 0.15s, border-color 0.15s; outline: none;
-}
-.tab-btn:hover { color: var(--fg-dim); }
-.tab-btn.active { color: var(--ember-glow); border-bottom-color: var(--ember); }
-
-/* Content */
-.content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 18px 20px; }
-.tab-panel { display: none; }
-.tab-panel.active { display: block; }
-
-/* Stat cards */
-.stat-row {
-  display: grid; grid-template-columns: repeat(5,1fr); gap: 10px; margin-bottom: 14px;
-}
-.stat-card {
-  background: var(--bg-surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 12px 14px; transition: border-color 0.2s;
-}
-.stat-card:hover { border-color: var(--border-em); }
-.stat-card.clickable { cursor: pointer; }
-.stat-card.clickable:active { transform: scale(0.98); }
-.stat-label {
-  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.6px; color: var(--fg-muted); margin-bottom: 6px;
-}
-.stat-value {
-  font-size: 22px; font-weight: 700; color: var(--fg);
-  font-family: var(--font-mono); letter-spacing: -0.5px;
-}
-.stat-value.hot { color: var(--ember-mid); text-shadow: 0 0 20px rgba(255,160,64,0.4); }
-.mode-badge {
-  display: inline-block; padding: 3px 8px; border-radius: 12px;
-  font-size: 11px; font-weight: 700; background: rgba(255,120,32,0.15);
-  color: var(--ember-mid); border: 1px solid rgba(255,120,32,0.25); margin-top: 2px;
-  cursor: pointer; text-transform: uppercase; letter-spacing: 0.4px; transition: background 0.2s;
-}
-.mode-badge:hover { background: rgba(255,120,32,0.25); }
-
-/* Panels */
-.panel {
-  background: var(--bg-surface); border: 1px solid var(--border);
-  border-radius: var(--radius); overflow: hidden; margin-bottom: 14px;
-}
-.panel-hdr {
-  padding: 10px 14px; border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; gap: 8px;
-}
-.panel-hdr-title { font-size: 12px; font-weight: 700; color: var(--fg-dim); flex: 1; }
-.panel-body { padding: 14px; }
-
-.ai-filter-bar { display: flex; gap: 4px; margin-bottom: 12px; }
-.ai-filter-btn {
-  padding: 5px 14px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);
-  background: transparent; color: var(--fg-muted); font-size: 11px; font-family: var(--font-mono);
-  cursor: pointer; transition: all 0.2s;
-}
-.ai-filter-btn.active { font-weight: 600; }
-.ai-filter-btn[data-ai="all"].active {
-  background: rgba(255,255,255,0.08); color: var(--fg); border-color: rgba(255,255,255,0.2);
-}
-.ai-filter-btn[data-ai="claude"].active {
-  background: rgba(255,120,32,0.15); color: #FF7820; border-color: rgba(255,120,32,0.3);
-}
-.ai-filter-btn[data-ai="gemini"].active {
-  background: rgba(66,133,244,0.15); color: #4285f4; border-color: rgba(66,133,244,0.3);
-}
-.ai-filter-btn[data-ai="codex"].active {
-  background: rgba(16,163,127,0.15); color: #10a37f; border-color: rgba(16,163,127,0.3);
-}
-.session-filter { margin-bottom: 8px; display: none; }
-.session-filter.visible { display: block; }
-.session-filter select {
-  width: 100%; font-family: var(--font-mono); font-size: 11px; padding: 6px 10px;
-  background: var(--bg-raised); border: 1px solid var(--border); color: var(--fg); border-radius: 6px;
-}
-
-/* Heat map */
-.hot-now-list { display: flex; flex-direction: column; }
-.hot-now-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 4px; margin-bottom: 3px; }
-.hot-now-item:hover { background: rgba(255,120,32,0.06); }
-.hot-now-collection {
-  font-family: var(--font-mono); font-size: 10px; color: var(--ember); width: 100px;
-  flex-shrink: 0; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.hot-now-preview {
-  font-size: 11px; color: var(--fg); flex: 1;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.hot-now-heat {
-  font-family: var(--font-mono); font-size: 10px; background: rgba(255,120,32,0.15);
-  color: var(--ember); padding: 1px 6px; border-radius: 8px; flex-shrink: 0;
-}
-.heat-map-area { min-height: 180px; display: flex; flex-direction: column; gap: 4px; }
-.heat-bar-row { display: flex; align-items: center; gap: 8px; height: 20px; cursor: pointer; }
-.heat-bar-row:hover { background: rgba(255,120,32,0.06); border-radius: 4px; }
-.heat-bar-label {
-  font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
-  width: 220px; flex-shrink: 0; text-overflow: ellipsis; overflow: hidden;
-  white-space: nowrap; text-align: right;
-}
-.heat-bar-track {
-  flex: 1; height: 14px; background: var(--bg-raised); border-radius: 3px; overflow: hidden;
-}
-.heat-bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
-.heat-bar-val {
-  font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
-  width: 36px; flex-shrink: 0; text-align: right;
-}
-.heat-detail {
-  margin: 4px 0 8px 0; padding: 10px 14px; border-radius: 6px;
-  background: var(--bg-raised); border-left: 3px solid var(--ember);
-  font-size: 12px; line-height: 1.5; display: none;
-}
-.heat-detail.open { display: block; }
-.heat-detail-collection {
-  font-family: var(--font-mono); font-size: 10px; color: var(--ember);
-  margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;
-}
-.heat-detail-content {
-  color: var(--fg); white-space: pre-wrap; word-break: break-word;
-  font-family: var(--font-mono); font-size: 11px; max-height: 200px; overflow-y: auto;
-}
-.heat-detail-meta {
-  font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
-  margin-top: 6px; display: flex; gap: 16px;
-}
-.retrieval-prompt {
-  font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted);
-  padding: 8px 12px; background: rgba(255,120,32,0.05); border-radius: 4px;
-  margin-bottom: 10px; border-left: 2px solid var(--ember);
-}
-.retrieval-prompt-label { font-size: 10px; color: var(--ember); text-transform: uppercase; margin-bottom: 2px; }
-.retrieval-result {
-  padding: 10px 12px; margin-bottom: 6px; border-radius: 6px;
-  background: var(--bg-raised); border-left: 3px solid var(--ember);
-}
-.retrieval-result-hdr {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 6px;
-}
-.retrieval-result-collection {
-  font-family: var(--font-mono); font-size: 10px; color: var(--ember);
-  text-transform: uppercase; letter-spacing: 0.5px;
-}
-.retrieval-result-score {
-  font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
-}
-.retrieval-result-content {
-  font-family: var(--font-mono); font-size: 11px; color: var(--fg);
-  white-space: pre-wrap; word-break: break-word; line-height: 1.5;
-}
-.xray-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 6px; gap: 1px; }
-.xray-seg { height: 100%; min-width: 2px; transition: width 0.3s; }
-.xray-seg-sim { background: #6699cc; }
-.xray-seg-heat { background: #FF7820; }
-.xray-seg-conn { background: #10a37f; }
-.xray-seg-decay { background: #888; }
-.xray-legend { display: flex; gap: 10px; margin-top: 4px; font-size: 9px; font-family: var(--font-mono); color: var(--fg-muted); }
-.xray-legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 3px; vertical-align: middle; }
-.retrieval-meta-bar {
-  display: flex; gap: 12px; margin-top: 8px; padding-top: 6px;
-  font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
-  border-top: 1px solid rgba(255,255,255,0.05);
-}
-.activity-entry {
-  padding: 8px 12px; margin-bottom: 4px; border-radius: 4px;
-  background: var(--bg-raised); font-family: var(--font-mono); font-size: 11px;
-  display: flex; justify-content: space-between; align-items: center; gap: 8px;
-}
-.activity-entry-prompt {
-  flex: 1; color: var(--fg); min-width: 0; display: flex; align-items: center; gap: 8px;
-}
-.activity-entry-prompt-text {
-  flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.activity-ai-dot {
-  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgba(255,255,255,0.35);
-}
-.activity-ai-dot[data-ai="claude"] { background: #FF7820; }
-.activity-ai-dot[data-ai="gemini"] { background: #4285f4; }
-.activity-ai-dot[data-ai="codex"] { background: #10a37f; }
-.activity-entry-stats {
-  display: flex; gap: 10px; flex-shrink: 0; color: var(--fg-muted); font-size: 10px;
-}
-.activity-entry-time { color: var(--fg-muted); font-size: 10px; flex-shrink: 0; }
-.activity-hit-badge {
-  background: rgba(255,120,32,0.15); color: var(--ember); padding: 1px 6px;
-  border-radius: 8px; font-size: 10px;
-}
-
-/* Connection graph */
-.conn-row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 4px; margin-bottom: 2px; }
-.conn-row:hover { background: rgba(255,120,32,0.06); }
-.conn-id { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); width: 120px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
-.conn-arrow { color: var(--ember); font-size: 12px; flex-shrink: 0; }
-.conn-bar-track { flex: 1; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
-.conn-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
-.conn-strength { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); width: 32px; flex-shrink: 0; text-align: right; }
-.conn-established { color: var(--ember); font-weight: 600; }
-.conn-graph-wrap { background: var(--bg-raised); border-radius: 6px; overflow: hidden; }
-
-/* Empty / loading states */
-.empty-state { text-align: center; padding: 32px 20px; color: var(--fg-muted); font-size: 12px; line-height: 1.7; }
-.empty-icon { font-size: 24px; margin-bottom: 8px; opacity: 0.4; }
-.loading-text { color: var(--fg-muted); font-size: 11px; display: flex; align-items: center; gap: 7px; padding: 16px; }
-
-/* Collections */
-.section-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--fg-muted); }
-.section-actions { display: flex; align-items: center; gap: 8px; }
-.col-list { display: flex; flex-direction: column; gap: 6px; }
-.col-item {
-  display: flex; align-items: center; gap: 10px;
-  background: var(--bg-surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 10px 14px;
-  cursor: pointer; transition: border-color 0.15s, background 0.15s;
-  flex-wrap: wrap;
-}
-.col-item:hover { border-color: var(--border-em); background: var(--bg-raised); }
-.col-item.expanded { border-color: rgba(255,120,32,0.3); }
-.col-item.disabled { opacity: 0.4; }
-.col-item-name { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--fg); flex: 1; }
-.col-item-count { font-size: 11px; color: var(--fg-muted); font-family: var(--font-mono); background: var(--bg-elevated); padding: 2px 8px; border-radius: 10px; }
-.toggle-switch { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; }
-.toggle-switch input { opacity: 0; width: 0; height: 0; }
-.toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #333; border-radius: 20px; transition: 0.3s; }
-.toggle-slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background: #888; border-radius: 50%; transition: 0.3s; }
-.toggle-switch input:checked + .toggle-slider { background: rgba(255,120,32,0.3); }
-.toggle-switch input:checked + .toggle-slider:before { transform: translateX(16px); background: #FF7820; }
-.col-rename-input { background: var(--bg-raised); border: 1px solid var(--ember); color: var(--fg); font-family: var(--font-mono); font-size: 12px; padding: 2px 6px; border-radius: 4px; width: 100%; }
-.col-search-area { border-top: 1px solid var(--border); padding: 12px 14px 14px; display: none; width: 100%; }
-.col-search-area.visible { display: block; }
-.search-row { display: flex; gap: 8px; margin-bottom: 10px; }
-.search-results { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
-.search-result-item { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 5px; padding: 8px 10px; font-size: 11.5px; }
-.search-result-id { font-family: var(--font-mono); font-size: 10px; color: var(--ember-mid); margin-bottom: 3px; }
-.search-result-text { color: var(--fg-dim); line-height: 1.5; }
-.search-result-score { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); margin-top: 3px; }
-
-/* Inline forms */
-.create-form {
-  display: none; background: var(--bg-raised); border: 1px solid var(--border-em);
-  border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px;
-}
-.create-form.visible { display: block; }
-.form-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.import-wizard { background: var(--bg-raised); border-radius: 8px; padding: 16px; margin-bottom: 16px; border: 1px solid rgba(255,120,32,0.15); display: none; }
-.import-wizard.visible { display: block; }
-.import-wizard-title { font-size: 16px; font-weight: 600; color: var(--ember); margin-bottom: 4px; }
-.import-wizard-sub { font-size: 12px; color: var(--fg-muted); margin-bottom: 16px; }
-.import-step { margin-bottom: 12px; }
-.import-step-label { font-size: 11px; font-weight: 600; color: var(--fg-muted); text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.5px; }
-.import-step-note { font-size: 11px; color: var(--fg-muted); margin-top: 4px; line-height: 1.5; }
-.import-success { background: rgba(255,120,32,0.08); border-radius: 8px; padding: 14px; margin-top: 12px; border-left: 3px solid var(--ember); }
-.import-success-stat { font-family: var(--font-mono); font-size: 13px; color: var(--fg); margin-bottom: 4px; }
-.import-step-input { width: 100%; }
-.import-action-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
-.import-supported { font-size: 11px; color: var(--fg-muted); margin-top: 4px; }
-.import-success-title { font-size: 12px; font-weight: 700; color: var(--ember-glow); margin-bottom: 8px; }
-.import-tip { font-size: 11px; color: var(--fg-muted); margin-top: 14px; line-height: 1.5; }
-.import-file-list { margin: 8px 0; max-height: 120px; overflow-y: auto; }
-.import-file-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 11px; font-family: var(--font-mono); color: var(--fg); background: rgba(255,255,255,0.03); border-radius: 4px; margin-bottom: 2px; }
-.import-file-remove { background: none; border: none; color: var(--fg-muted); cursor: pointer; font-size: 14px; padding: 0 4px; }
-.import-file-remove:hover { color: var(--error); }
-.import-pick-row { display: flex; gap: 8px; margin-bottom: 8px; }
-.import-mode-switch { display: flex; gap: 8px; margin-bottom: 14px; }
-.import-mode-btn {
-  background: transparent; border: 1px solid var(--border); border-radius: 999px;
-  color: var(--fg-muted); cursor: pointer; font-size: 11px; font-weight: 600;
-  padding: 6px 12px; transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-.import-mode-btn:hover { border-color: var(--border-em); color: var(--fg-dim); }
-.import-mode-btn.active {
-  background: rgba(255,120,32,0.12); border-color: rgba(255,120,32,0.28); color: var(--ember-glow);
-}
-.import-mode-panel { display: none; }
-.import-mode-panel.active { display: block; }
-.import-query-prompt { font-size: 11px; color: var(--fg-dim); margin-top: 12px; margin-bottom: 8px; line-height: 1.5; }
-.import-query-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
-.import-query-btn {
-  background: rgba(255,120,32,0.08); border: 1px solid rgba(255,120,32,0.18); border-radius: 999px;
-  color: var(--fg); cursor: pointer; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.4;
-  padding: 6px 10px; text-align: left; transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-.import-query-btn:hover { background: rgba(255,120,32,0.14); border-color: rgba(255,120,32,0.28); color: var(--ember-glow); }
-
-/* CinderACE promo */
-.promo-card {
-  border: 1px solid rgba(255,120,32,0.22);
-  background: linear-gradient(135deg, rgba(255,120,32,0.05), rgba(255,160,64,0.03));
-  border-radius: var(--radius); padding: 12px 16px; margin-top: 18px;
-  display: flex; align-items: center; gap: 14px;
-}
-.promo-icon { font-size: 20px; flex-shrink: 0; opacity: 0.8; }
-.promo-text { flex: 1; font-size: 12px; color: var(--fg-dim); line-height: 1.6; }
-.promo-text strong { color: var(--ember-mid); }
-.promo-link { font-size: 11px; color: var(--ember); text-decoration: none; display: block; margin-top: 3px; cursor: pointer; }
-.promo-link:hover { color: var(--ember-glow); }
-
-/* Settings */
-.settings-section { margin-bottom: 20px; }
-.settings-section-title {
-  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.7px; color: var(--fg-muted); margin-bottom: 10px;
-  padding-bottom: 6px; border-bottom: 1px solid var(--border);
-}
-.provider-cards { display: flex; gap: 8px; margin-bottom: 8px; }
-.provider-card {
-  flex: 1; border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 12px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
-  background: var(--bg-surface);
-}
-.provider-card:hover { border-color: var(--border-em); background: var(--bg-raised); }
-.provider-card.selected { border-color: var(--ember); background: rgba(255,120,32,0.06); }
-.provider-name { font-size: 13px; font-weight: 600; color: var(--fg); margin-bottom: 2px; }
-.provider-desc { font-size: 11px; color: var(--fg-muted); }
-.provider-card.selected .provider-name { color: var(--ember-mid); }
-.setting-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 0; border-bottom: 1px solid var(--border);
-}
-.setting-row:last-child { border-bottom: none; }
-.setting-label { font-size: 12.5px; color: var(--fg); }
-.setting-hint { font-size: 11px; color: var(--fg-muted); margin-top: 1px; }
-.ollama-status { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-muted); transition: background 0.3s, box-shadow 0.3s; }
-.status-dot.ok  { background: var(--success); box-shadow: 0 0 6px rgba(94,204,138,0.5); }
-.status-dot.err { background: var(--error); }
-.workspace-card { background: var(--bg-raised); border-radius: 8px; padding: 14px; margin-bottom: 10px; border-left: 3px solid var(--ember); }
-.workspace-title { font-size: 14px; font-weight: 600; color: var(--fg); margin-bottom: 8px; }
-.workspace-cols { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-.workspace-col-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; font-family: var(--font-mono); padding: 3px 8px; border-radius: 12px; cursor: pointer;
-  border: 1px solid rgba(255,255,255,0.1); user-select: none;
-}
-.workspace-col-chip input { accent-color: var(--ember); }
-.workspace-col-chip.active { background: rgba(255,120,32,0.2); border-color: var(--ember); color: var(--ember); }
-.workspace-col-chip.inactive { background: transparent; color: var(--fg-muted); opacity: 0.5; }
-.workspace-actions { display: flex; gap: 8px; justify-content: flex-end; }
-.workspace-launch { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); flex-wrap: wrap; }
-.workspace-help { font-size: 11px; color: var(--fg-muted); margin-top: 8px; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 4px; font-family: var(--font-mono); }
-.workspace-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-.workspace-summary { font-size: 11px; color: var(--fg-muted); }
-.workspace-name-hint { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); margin-bottom: 8px; }
-.workspace-label-input { width: 100%; margin-bottom: 10px; }
-.workspace-cwd-label { font-size: 10px; color: var(--fg-muted); white-space: nowrap; }
-.workspace-cwd-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
-.workspace-cwd-input { flex: 1; font-family: var(--font-mono); font-size: 10px; background: var(--bg); border: 1px solid var(--border); color: var(--fg-muted); padding: 3px 8px; border-radius: 4px; }
-.workspace-cwd-hint { font-size: 9px; color: var(--fg-muted); margin-top: 2px; font-style: italic; }
-.workspace-empty { margin-bottom: 10px; }
-.workspace-section { margin: 22px 0 18px; }
-.workspace-section-divider { height: 1px; background: var(--border); margin-bottom: 14px; }
-.workspace-section-subtitle { font-size: 12px; color: var(--fg-muted); margin-top: 2px; }
-.quick-launch-card { margin-bottom: 12px; }
-.quick-launch-row { display: flex; gap: 6px; flex-wrap: wrap; }
-.btn-launch { padding: 4px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 11px; font-family: var(--font-mono); }
-.btn-launch-claude { background: rgba(255,120,32,0.2); color: #FF7820; }
-.btn-launch-claude:hover { background: rgba(255,120,32,0.35); }
-.btn-launch-gemini { background: rgba(66,133,244,0.2); color: #4285f4; }
-.btn-launch-gemini:hover { background: rgba(66,133,244,0.35); }
-.btn-launch-codex { background: rgba(16,163,127,0.2); color: #10a37f; }
-.btn-launch-codex:hover { background: rgba(16,163,127,0.35); }
-.launch-dir-subtitle { font-size: 11px; color: var(--fg-muted); margin-bottom: 10px; }
-.launch-dir-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.launch-dir-row:last-child { margin-bottom: 0; }
-.launch-dir-label { font-size: 12px; font-weight: 600; width: 60px; flex-shrink: 0; }
-.launch-dir-input { flex: 1; font-family: var(--font-mono); font-size: 11px; }
-.launch-dir-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-
-/* CLI cards */
-.cli-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 14px; }
-.cli-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; transition: border-color 0.2s; }
-.cli-card:hover { border-color: var(--border-em); }
-.cli-name { font-size: 14px; font-weight: 700; color: var(--fg); margin-bottom: 4px; }
-.cli-path { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); margin-bottom: 12px; word-break: break-all; min-height: 14px; }
-.cli-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; font-size: 10.5px; font-weight: 600; }
-.badge-ok   { background: rgba(94,204,138,0.12); color: var(--success); }
-.badge-err  { background: rgba(232,96,96,0.12);  color: var(--error); }
-.badge-warn { background: rgba(212,160,48,0.12); color: var(--warning); }
-.toggle-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--fg-dim); margin-top: 6px; cursor: pointer; }
-.toggle { position: relative; width: 32px; height: 17px; flex-shrink: 0; }
-.toggle input { display: none; }
-.toggle-track { position: absolute; inset: 0; background: var(--bg-elevated); border-radius: 9px; border: 1px solid var(--border); transition: background 0.2s; }
-.toggle input:checked + .toggle-track { background: rgba(255,120,32,0.3); border-color: var(--ember-dim); }
-.toggle-thumb { position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--fg-muted); transition: transform 0.2s, background 0.2s; pointer-events: none; }
-.toggle input:checked ~ .toggle-thumb { transform: translateX(15px); background: var(--ember); }
-
-/* Inputs */
-input[type="text"], input[type="password"], input[type="number"] {
-  background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  color: var(--fg); padding: 7px 11px; font-size: 12.5px; font-family: inherit; outline: none; transition: border-color 0.15s;
-}
-input:focus { border-color: var(--ember); }
-input.wide { width: 260px; }
-input.medium { width: 160px; }
-input.fluid { flex: 1; min-width: 80px; }
-select {
-  background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  color: var(--ember-glow); padding: 7px 28px 7px 11px; font-size: 12.5px; font-weight: 600;
-  font-family: inherit; outline: none; cursor: pointer; -webkit-appearance: none; appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffa040' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 10px center; color-scheme: dark;
-}
-select:focus { border-color: var(--ember); }
-select option { background: var(--bg-raised); color: var(--ember-glow); }
-
-/* Buttons */
-.btn {
-  display: inline-flex; align-items: center; gap: 5px; padding: 7px 16px;
-  border: none; border-radius: var(--radius-sm); font-family: inherit; font-size: 12.5px;
-  font-weight: 600; cursor: pointer; transition: all 0.15s; outline: none;
-}
-.btn-primary { background: var(--ember); color: #050505; }
-.btn-primary:hover { background: var(--ember-mid); box-shadow: 0 0 14px rgba(255,120,32,0.35); }
-.btn-secondary { background: var(--bg-elevated); color: var(--fg); border: 1px solid var(--border); }
-.btn-secondary:hover { background: var(--coal); border-color: var(--border-em); }
-.btn-danger { background: rgba(232,96,96,0.12); color: var(--error); border: 1px solid rgba(232,96,96,0.2); }
-.btn-danger:hover { background: rgba(232,96,96,0.22); }
-.btn-sm { padding: 4px 10px; font-size: 11px; }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
-
-/* Card (settings) */
-.card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; }
-
-/* Toast */
-.toast {
-  position: fixed; bottom: 18px; right: 18px; padding: 9px 16px;
-  border-radius: var(--radius-sm); font-size: 12px; font-weight: 500;
-  opacity: 0; transform: translateY(8px); transition: opacity 0.25s, transform 0.25s;
-  z-index: 200; pointer-events: none; max-width: 320px;
-}
-.toast.show { opacity: 1; transform: translateY(0); }
-.toast.ok  { background: rgba(94,204,138,0.15); color: var(--success); border: 1px solid rgba(94,204,138,0.25); }
-.toast.err { background: rgba(232,96,96,0.15);  color: var(--error);   border: 1px solid rgba(232,96,96,0.25); }
-.toast.inf { background: rgba(255,120,32,0.12); color: var(--ember-mid); border: 1px solid rgba(255,120,32,0.2); }
-
-/* Refresh badge */
-.refresh-badge { font-size: 10px; color: var(--fg-faint); }
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--coal); }
-
-/* Spinner */
-@keyframes spin { to { transform: rotate(360deg); } }
-.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--ember); border-radius: 50%; animation: spin 0.7s linear infinite; }
-</style>
-</head>
-<body>
-
-<div class="shell">
-
-  <!-- Header -->
-  <div class="header">
-    <div class="header-logo">
-      <svg class="logo-flame" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M13 2C13 2 7 8 7 14C7 17.3 9.7 20 13 20C16.3 20 19 17.3 19 14C19 8 13 2 13 2Z" fill="url(#fg1)"/>
-        <path d="M13 10C13 10 10 13.5 10 16C10 17.6 11.3 19 13 19C14.7 19 16 17.6 16 16C16 13.5 13 10 13 10Z" fill="url(#fg2)"/>
-        <defs>
-          <linearGradient id="fg1" x1="13" y1="2" x2="13" y2="20" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stop-color="#FFD080"/>
-            <stop offset="100%" stop-color="#FF7820"/>
-          </linearGradient>
-          <linearGradient id="fg2" x1="13" y1="10" x2="13" y2="19" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stop-color="#fff" stop-opacity="0.9"/>
-            <stop offset="100%" stop-color="#FFA040"/>
-          </linearGradient>
-        </defs>
-      </svg>
-      <span class="header-title">Ember Memory</span>
-      <span class="header-sub">Controller v2</span>
-    </div>
-    <div class="header-spacer"></div>
-    <div class="engine-pill">
-      <div class="engine-dot" id="engineDot"></div>
-      <span id="enginePillLabel">Engine</span>
-    </div>
-  </div>
-
-  <!-- Tab bar -->
-  <div class="tab-bar">
-    <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
-    <button class="tab-btn" data-tab="collections">Collections</button>
-    <button class="tab-btn" data-tab="settings">Settings</button>
-    <button class="tab-btn" data-tab="cli">CLI Status</button>
-  </div>
-
-  <!-- Content -->
-  <div class="content">
-
-    <!-- ═══════════ DASHBOARD ═══════════ -->
-    <div class="tab-panel active" id="tab-dashboard">
-
-      <div class="panel" style="margin-bottom:12px;">
-        <div class="panel-hdr">
-          <div class="panel-hdr-title">Test Query</div>
-        </div>
-        <div class="panel-body" style="padding:10px 14px;">
-          <div style="display:flex; gap:8px;">
-            <input type="text" id="testQueryInput" class="fluid" placeholder="Ask ember-memory anything..." style="font-family:var(--font-mono); font-size:12px;" />
-            <button class="btn btn-primary btn-sm" id="btnTestQuery">Search</button>
-          </div>
-          <div id="testQueryResults" style="margin-top:8px;"></div>
-        </div>
-      </div>
-
-      <div class="ai-filter-bar" id="aiFilterBar">
-        <button class="ai-filter-btn active" data-ai="all">All</button>
-        <button class="ai-filter-btn" data-ai="claude">Claude</button>
-        <button class="ai-filter-btn" data-ai="gemini">Gemini</button>
-        <button class="ai-filter-btn" data-ai="codex">Codex</button>
-      </div>
-      <div class="session-filter" id="sessionFilterWrap">
-        <select id="sessionFilter">
-          <option value="">All Sessions</option>
-        </select>
-      </div>
-
-      <div class="stat-row">
-        <div class="stat-card">
-          <div class="stat-label">Memories Tracked</div>
-          <div class="stat-value" id="stat-memories">—</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Hot Memories</div>
-          <div class="stat-value" id="stat-hot">—</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Connections</div>
-          <div class="stat-value" id="stat-connections">—</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Engine Ticks</div>
-          <div class="stat-value" id="stat-ticks">—</div>
-        </div>
-        <div class="stat-card clickable" id="heatModeCard" title="Click to toggle heat mode">
-          <div class="stat-label">Heat Mode</div>
-          <div class="mode-badge" id="heatModeBadge">—</div>
-        </div>
-        <div class="stat-card clickable" id="resetEngineCard" title="Reset all Engine state" style="border-color: #662222;">
-          <div class="stat-label">Engine</div>
-          <div class="stat-value" style="font-size:12px; color:#ff6666;">RESET</div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-hdr">
-          <div class="panel-hdr-title">Hot Right Now</div>
-          <span class="refresh-badge" id="hotNowRefreshTime"></span>
-        </div>
-        <div class="panel-body" id="hotNowArea">
-          <div class="loading-text"><div class="spinner"></div> Loading hot memories...</div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-hdr">
-          <div class="panel-hdr-title">Memory Heat Map</div>
-          <span class="refresh-badge" id="heatRefreshTime"></span>
-        </div>
-        <div class="panel-body">
-          <div class="heat-map-area" id="heatMapArea">
-            <div class="loading-text"><div class="spinner"></div> Loading heat data...</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-hdr">
-          <div class="panel-hdr-title">Last Retrieval</div>
-          <span class="refresh-badge" id="retrievalRefreshTime"></span>
-        </div>
-        <div class="panel-body" id="lastRetrievalArea">
-          <div class="empty-state">
-            <div class="empty-icon">&#x1F50D;</div>
-            <span>Waiting for first retrieval...</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-hdr">
-          <div class="panel-hdr-title">Activity Feed</div>
-          <span class="refresh-badge" id="activityRefreshTime"></span>
-        </div>
-        <div class="panel-body" id="activityFeedArea">
-          <div class="empty-state">
-            <span>No activity yet — send a message to your AI</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-hdr">
-          <div class="panel-hdr-title">Topic Connections</div>
-          <span class="refresh-badge" id="connRefreshTime"></span>
-        </div>
-        <div class="panel-body" id="connTableArea">
-          <div class="empty-state" id="connEmptyState">
-            <div class="empty-icon">&#9673;</div>
-            Connections emerge as topics co-occur in your work
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- ═══════════ COLLECTIONS ═══════════ -->
-    <div class="tab-panel" id="tab-collections">
-
-      <div class="section-hdr">
-        <span class="section-title">Collections</span>
-        <div class="section-actions">
-          <button class="btn btn-primary btn-sm" id="btnImportToggle">Import Knowledge</button>
-        </div>
-      </div>
-
-      <div class="import-wizard" id="importWizard">
-        <div class="import-wizard-title">Import Knowledge</div>
-        <div class="import-wizard-sub">Import files into an existing collection or create a new one while you import.</div>
-
-        <div class="import-step">
-          <div class="import-step-label">1. Add content</div>
-          <div class="import-pick-row">
-            <button class="btn btn-secondary btn-sm" id="btnImportBrowseFiles">Select Files</button>
-            <button class="btn btn-secondary btn-sm" id="btnImportBrowseFolder">Select Folder</button>
-          </div>
-          <div class="import-file-list" id="importFileList"></div>
-          <div class="import-supported">Supports .md, .txt, .json, and .jsonl files.</div>
-        </div>
-
-        <div class="import-step">
-          <div class="import-step-label">2. Choose mode</div>
-          <div class="import-mode-switch">
-            <button type="button" class="import-mode-btn active" id="btnImportModeExisting">Add to Existing</button>
-            <button type="button" class="import-mode-btn" id="btnImportModeNew">Create New</button>
-          </div>
-        </div>
-
-        <div class="import-mode-panel active" id="importModeExisting">
-          <div class="import-step">
-            <div class="import-step-label">3. Select collection</div>
-            <select id="importCollectionSelect"></select>
-            <div id="existingNewTopicArea" style="display:none; margin-top:8px;">
-              <div class="import-step-label">New topic name</div>
-              <div class="import-supported" style="margin-bottom:4px;">Add a new topic under this collection group</div>
-              <input type="text" class="fluid" id="existingNewTopicName" placeholder="e.g. identity, reflections, notes" />
-            </div>
-          </div>
-        </div>
-
-        <div class="import-mode-panel" id="importModeNew">
-          <div class="import-step">
-            <div class="import-step-label">3. Collection Name</div>
-            <div class="import-supported" style="margin-bottom:4px;">The group this topic belongs to (e.g. "Seren's Collections")</div>
-            <div class="form-row" style="margin-bottom:10px; gap:8px;">
-              <select id="importScope" class="fluid" style="flex:0 0 auto; min-width:120px;">
-                <option value="shared">Shared</option>
-                <option value="claude">Claude</option>
-                <option value="gemini">Gemini</option>
-                <option value="codex">Codex</option>
-              </select>
-              <input type="text" class="fluid" id="importCollectionDisplayName" placeholder="Display name (optional)" />
-            </div>
-
-            <div class="import-step-label">Topic Name</div>
-            <div class="import-supported" style="margin-bottom:4px;">What this content is about (e.g. "identity", "reflections")</div>
-            <div class="form-row" style="margin-bottom:8px;">
-              <input type="text" class="fluid" id="importCollectionName" placeholder="e.g. identity, reflections, notes" />
-            </div>
-          </div>
-        </div>
-
-        <div class="import-step">
-          <div class="import-step-label">4. Import</div>
-          <div class="import-action-row">
-            <button class="btn btn-primary" id="btnRunImport">Import</button>
-          </div>
-          <div class="import-supported" id="importProgressText"></div>
-        </div>
-
-        <div id="importSuccessHost"></div>
-
-        <div class="import-tip">Tip: Export AI chats with CinderACE, then import them here.</div>
-      </div>
-
-      <div class="col-list" id="colList">
-        <div class="loading-text"><div class="spinner"></div> Loading collections...</div>
-      </div>
-
-      <div class="workspace-section">
-        <div class="workspace-section-divider"></div>
-        <div class="section-hdr">
-          <div>
-            <div class="section-title">Workspaces</div>
-            <div class="workspace-section-subtitle">Collection presets for focused sessions</div>
-          </div>
-        </div>
-
-        <div class="card" style="margin-bottom:0;">
-          <div class="workspace-toolbar">
-            <div class="workspace-summary">Configure per-workspace collection search scopes.</div>
-            <button class="btn btn-primary btn-sm" id="btnWorkspaceToggle">New Workspace</button>
-          </div>
-
-          <div class="create-form" id="workspaceCreateForm">
-            <div class="form-row" style="margin-bottom:8px;">
-              <input type="text" class="medium" id="newWorkspaceName" placeholder="workspace-name" />
-              <input type="text" class="fluid" id="newWorkspaceLabel" placeholder="Display label" />
-            </div>
-            <div class="workspace-cwd-row">
-              <span class="workspace-cwd-label">Project Directory</span>
-              <input type="text" class="workspace-cwd-input" id="newWorkspaceCwd" placeholder="Optional — auto-activate when working in this directory" readonly />
-              <button type="button" class="btn btn-secondary btn-sm" id="btnWorkspaceBrowseCwd">Browse</button>
-              <button type="button" class="btn btn-secondary btn-sm" id="btnWorkspaceClearCwd" disabled>Clear</button>
-            </div>
-            <div class="workspace-cols" id="newWorkspaceCollections"></div>
-            <div class="workspace-actions">
-              <button class="btn btn-secondary btn-sm" id="btnWorkspaceCancel">Cancel</button>
-              <button class="btn btn-primary btn-sm" id="btnCreateWorkspace">Create</button>
-            </div>
-          </div>
-
-          <div id="workspaceList">
-            <div class="loading-text"><div class="spinner"></div> Loading workspaces...</div>
-          </div>
-
-          <div class="workspace-help">Set EMBER_WORKSPACE=name when launching your CLI to activate a workspace. Each workspace controls which collections are searched.</div>
-        </div>
-      </div>
-
-      <div class="promo-card">
-        <div class="promo-icon">&#128293;</div>
-        <div class="promo-text">
-          Looking to grow your collections with clean data?
-          <strong>CinderACE</strong> exports AI conversations from 14 platforms — ready to ingest.
-          <a class="promo-link" id="promoLink">kindledflamestudios.com</a>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- ═══════════ SETTINGS ═══════════ -->
-    <div class="tab-panel" id="tab-settings">
-
-      <div class="settings-section">
-        <div class="settings-section-title">Embedding Provider</div>
-        <div class="provider-cards">
-          <div class="provider-card" data-provider="ollama" id="prov-ollama">
-            <div class="provider-name">Ollama</div>
-            <div class="provider-desc">Local — no API key needed</div>
-          </div>
-          <div class="provider-card" data-provider="openai" id="prov-openai">
-            <div class="provider-name">OpenAI</div>
-            <div class="provider-desc">text-embedding-3-small</div>
-          </div>
-          <div class="provider-card" data-provider="google" id="prov-google">
-            <div class="provider-name">Google</div>
-            <div class="provider-desc">text-embedding-004</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-section-title">API Keys</div>
-        <div class="card" style="margin-bottom:0;">
-          <div class="setting-row">
-            <div>
-              <div class="setting-label">OpenAI API Key</div>
-              <div class="setting-hint">Required for OpenAI embeddings</div>
-            </div>
-            <input type="password" class="wide" id="keyOpenAI" placeholder="sk-..." />
-          </div>
-          <div class="setting-row">
-            <div>
-              <div class="setting-label">Google API Key</div>
-              <div class="setting-hint">Required for Google embeddings</div>
-            </div>
-            <input type="password" class="wide" id="keyGoogle" placeholder="AIza..." />
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-section-title">Storage Backend</div>
-        <div class="card" style="margin-bottom:0;">
-          <div class="setting-row">
-            <div>
-              <div class="setting-label">Vector Database</div>
-              <div class="setting-hint">Where embeddings are stored</div>
-            </div>
-            <select id="backendSelect">
-              <option value="chroma">ChromaDB</option>
-              <option value="qdrant">Qdrant</option>
-              <option value="weaviate">Weaviate</option>
-              <option value="pinecone">Pinecone</option>
-              <option value="pgvector">pgvector</option>
-              <option value="sqlite_vss">SQLite VSS</option>
-              <option value="in_memory">In-Memory</option>
-            </select>
-          </div>
-          <div class="setting-row">
-            <div>
-              <div class="setting-label">Data Directory</div>
-              <div class="setting-hint">Where local data is stored</div>
-            </div>
-            <div style="display:flex;gap:6px;align-items:center;">
-              <input type="text" class="wide" id="dataDir" />
-              <button class="btn btn-secondary btn-sm" id="btnBrowse">Browse</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-section-title">Namespace Mode</div>
-        <div class="card" style="margin-bottom:0;">
-          <div class="setting-row">
-            <div>
-              <div class="setting-label">Collection Visibility</div>
-              <div class="setting-hint">Controls which collections each CLI session can access</div>
-            </div>
-            <select id="namespaceModeSelect">
-              <option value="scoped">Scoped (default) — each CLI sees shared + its own private collections</option>
-              <option value="open">Open — all CLIs see all collections (single AI setup)</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-section-title">Ollama Status</div>
-        <div class="card" style="margin-bottom:0;">
-          <div class="setting-row">
-            <div>
-              <div class="setting-label">Connection</div>
-              <div class="setting-hint">Local Ollama instance</div>
-            </div>
-            <div class="ollama-status">
-              <div class="status-dot" id="ollamaStatusDot"></div>
-              <span id="ollamaStatusText">Checking...</span>
-              <button class="btn btn-secondary btn-sm" id="btnCheckOllama">Check</button>
-            </div>
-          </div>
-          <div class="setting-row" style="margin-top:8px;">
-            <div>
-              <div class="setting-label">Embedding Model</div>
-              <div class="setting-hint">Select which Ollama model to use for embeddings</div>
-            </div>
-            <select id="ollamaModelSelect" class="medium">
-              <option value="">Detecting models...</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-section-title">Search Parameters</div>
-        <div class="card" style="margin-bottom:0;">
-          <div class="setting-row">
-            <div>
-              <div class="setting-label">Similarity Threshold</div>
-              <div class="setting-hint">Minimum similarity score (0–1)</div>
-            </div>
-            <input type="number" class="medium" id="simThreshold" min="0" max="1" step="0.05" />
-          </div>
-          <div class="setting-row">
-            <div>
-              <div class="setting-label">Max Results</div>
-              <div class="setting-hint">Maximum number of search hits</div>
-            </div>
-            <input type="number" class="medium" id="maxResults" min="1" max="50" />
-          </div>
-          <div class="setting-row">
-            <div>
-              <div class="setting-label">Max Preview Chars</div>
-              <div class="setting-hint">Characters shown in result preview</div>
-            </div>
-            <input type="number" class="medium" id="maxPreviewChars" min="50" max="1000" />
-          </div>
-        </div>
-      </div>
-
-      <div id="launchDirsSectionHost"></div>
-
-      <div style="margin-top:6px;">
-        <button class="btn btn-primary" id="btnSaveSettings">Save Settings</button>
-      </div>
-
-    </div>
-
-    <!-- ═══════════ CLI STATUS ═══════════ -->
-    <div class="tab-panel" id="tab-cli">
-
-      <div class="section-hdr" style="margin-bottom:12px;">
-        <span class="section-title">CLI Detection</span>
-        <button class="btn btn-primary btn-sm" id="btnInstallAll">Run Install</button>
-      </div>
-
-      <div class="cli-grid" id="cliGrid">
-        <div class="loading-text"><div class="spinner"></div> Detecting CLIs...</div>
-      </div>
-
-    </div>
-
-  </div>
-</div>
-
-<div class="toast" id="toast"></div>
-
-<script>
 /* =====================================================
    EMBER MEMORY CONTROLLER v2
    Pure JS — pywebview API wrapper
@@ -1107,31 +90,46 @@ function copyTextToClipboard(text) {
   });
 }
 
+function openExternalUrl(url) {
+  return callApi('open_external_url', url).then(function(r) {
+    if (!r || !r.ok) {
+      window.location.href = url;
+    }
+  });
+}
+
 // ── Tab switching ─────────────────────────────────────
+function activateTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-tab') === tab);
+  });
+  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+  var panel = document.getElementById('tab-' + tab);
+  if (panel) panel.classList.add('active');
+
+  if (tab === 'dashboard') {
+    startDashRefresh();
+  } else {
+    stopDashRefresh();
+    if (tab === 'collections') {
+      loadCollections();
+      loadWorkspaces();
+    }
+    else if (tab === 'settings') {
+      loadSettings();
+      loadLaunchDirs();
+    }
+    else if (tab === 'cli') {
+      loadCLIStatus();
+      loadDesktopLauncherStatus();
+    }
+  }
+}
+
 function initTabs() {
   document.querySelectorAll('.tab-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var tab = btn.getAttribute('data-tab');
-      document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
-      document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
-      btn.classList.add('active');
-      var panel = document.getElementById('tab-' + tab);
-      if (panel) panel.classList.add('active');
-
-      if (tab === 'dashboard') {
-        startDashRefresh();
-      } else {
-        stopDashRefresh();
-        if (tab === 'collections') {
-          loadCollections();
-          loadWorkspaces();
-        }
-        else if (tab === 'settings') {
-          loadSettings();
-          loadLaunchDirs();
-        }
-        else if (tab === 'cli') loadCLIStatus();
-      }
+      activateTab(btn.getAttribute('data-tab'));
     });
   });
 }
@@ -1143,6 +141,13 @@ function initTabs() {
 // Force graph removed — replaced with connection table
 var currentAiFilter = 'all';
 var currentSessionFilter = '';
+var aiDisplayNames = {
+  all: 'All',
+  shared: 'Shared',
+  claude: 'Claude',
+  gemini: 'Gemini',
+  codex: 'Codex'
+};
 
 function setEngineAlive(alive) {
   document.getElementById('engineDot').classList.toggle('live', alive);
@@ -1242,10 +247,7 @@ function initSessionFilter() {
 
 function getAiDisplayName(aiId) {
   var value = String(aiId || '').toLowerCase();
-  if (value === 'claude') return 'Claude';
-  if (value === 'gemini') return 'Gemini';
-  if (value === 'codex') return 'Codex';
-  return 'All';
+  return aiDisplayNames[value] || (value || 'All');
 }
 
 function updateAiFilterButtons() {
@@ -1254,12 +256,16 @@ function updateAiFilterButtons() {
   });
 }
 
-function initAiFilters() {
-  var bar = document.getElementById('aiFilterBar');
-  if (!bar || bar.getAttribute('data-ready') === 'true') return;
-  bar.setAttribute('data-ready', 'true');
-  updateAiFilterButtons();
-  bar.querySelectorAll('.ai-filter-btn').forEach(function(btn) {
+function registerAiDisplayName(aiId, name) {
+  var key = String(aiId || '').toLowerCase();
+  if (!key) return;
+  aiDisplayNames[key] = String(name || aiId);
+}
+
+function wireAiFilterButtons() {
+  document.querySelectorAll('.ai-filter-btn').forEach(function(btn) {
+    if (btn.getAttribute('data-bound') === 'true') return;
+    btn.setAttribute('data-bound', 'true');
     btn.addEventListener('click', function() {
       var nextFilter = btn.getAttribute('data-ai') || 'all';
       if (nextFilter === currentAiFilter) return;
@@ -1268,6 +274,63 @@ function initAiFilters() {
       updateAiFilterButtons();
       loadDashboard();
     });
+  });
+}
+
+function renderCustomCliFilters(clis) {
+  var bar = document.getElementById('aiFilterBar');
+  var scopeSel = document.getElementById('importScope');
+  var validFilters = { all: true, claude: true, gemini: true, codex: true };
+  if (!bar) return;
+
+  bar.querySelectorAll('[data-custom-cli="true"]').forEach(function(btn) {
+    btn.remove();
+  });
+  if (scopeSel) {
+    scopeSel.querySelectorAll('[data-custom-cli="true"]').forEach(function(opt) {
+      opt.remove();
+    });
+  }
+
+  (clis || []).forEach(function(c) {
+    var cliId = String((c && c.id) || '').trim().toLowerCase();
+    if (!cliId) return;
+    var cliName = String((c && c.name) || cliId);
+    validFilters[cliId] = true;
+    registerAiDisplayName(cliId, cliName);
+
+    var btn = document.createElement('button');
+    btn.className = 'ai-filter-btn';
+    btn.setAttribute('data-ai', cliId);
+    btn.setAttribute('data-custom-cli', 'true');
+    btn.textContent = cliName;
+    bar.appendChild(btn);
+
+    if (scopeSel) {
+      var opt = document.createElement('option');
+      opt.value = cliId;
+      opt.textContent = cliName;
+      opt.setAttribute('data-custom-cli', 'true');
+      scopeSel.appendChild(opt);
+    }
+  });
+
+  if (!validFilters[currentAiFilter]) {
+    currentAiFilter = 'all';
+    currentSessionFilter = '';
+  }
+  wireAiFilterButtons();
+  updateAiFilterButtons();
+}
+
+function initAiFilters() {
+  var bar = document.getElementById('aiFilterBar');
+  if (!bar || bar.getAttribute('data-ready') === 'true') return;
+  bar.setAttribute('data-ready', 'true');
+  wireAiFilterButtons();
+
+  callApi('get_custom_clis').then(function(r) {
+    renderCustomCliFilters((r && r.ok && r.clis) ? r.clis : []);
   });
 }
 
@@ -1377,6 +440,24 @@ document.getElementById('testQueryInput').addEventListener('keydown', function(e
   if (e.key === 'Enter') document.getElementById('btnTestQuery').click();
 });
 
+document.getElementById('btnStartCli').addEventListener('click', function() {
+  activateTab('cli');
+});
+
+document.getElementById('btnStartImport').addEventListener('click', function() {
+  activateTab('collections');
+  setTimeout(function() {
+    var btn = document.getElementById('btnImportToggle');
+    var wizard = document.getElementById('importWizard');
+    if (btn && wizard && !wizard.classList.contains('visible')) btn.click();
+  }, 0);
+});
+
+document.getElementById('btnStartQuery').addEventListener('click', function() {
+  var input = document.getElementById('testQueryInput');
+  if (input) input.focus();
+});
+
 function getCollectionDisplayName(collectionName) {
   var rawName = String(collectionName || '').trim();
   if (!rawName) return 'unknown';
@@ -1389,80 +470,6 @@ function getCollectionAccentColor(collectionName) {
   if (owner === 'gemini') return '#4285f4';
   if (owner === 'codex') return '#10a37f';
   return 'var(--ember)';
-}
-
-function getHotNowPreview(meta, memoryId) {
-  var preview = meta && meta.preview ? String(meta.preview) : '';
-  preview = preview.replace(/\s+/g, ' ').trim();
-  if (!preview) {
-    var shortId = String(memoryId || '').trim();
-    return shortId ? ('Memory ' + shortId.slice(0, 12)) : 'Memory preview unavailable';
-  }
-  if (preview.length > 60) return preview.slice(0, 60) + '\u2026';
-  return preview;
-}
-
-function buildHotNowItem(memoryId, heat, meta) {
-  var item = document.createElement('div');
-  item.className = 'hot-now-item';
-  item.title = (meta && meta.collection ? String(meta.collection) : 'unknown') + ' | ' + getHotNowPreview(meta, memoryId);
-
-  var collection = document.createElement('div');
-  collection.className = 'hot-now-collection';
-  collection.textContent = getCollectionDisplayName(meta && meta.collection);
-  collection.style.color = getCollectionAccentColor(meta && meta.collection);
-
-  var preview = document.createElement('div');
-  preview.className = 'hot-now-preview';
-  preview.textContent = getHotNowPreview(meta, memoryId);
-
-  var heatBadge = document.createElement('div');
-  heatBadge.className = 'hot-now-heat';
-  heatBadge.textContent = safeNum(heat, 0).toFixed(1);
-
-  item.appendChild(collection);
-  item.appendChild(preview);
-  item.appendChild(heatBadge);
-  return item;
-}
-
-function loadHotNow() {
-  var area = document.getElementById('hotNowArea');
-  if (!area) return;
-
-  setTextById('hotNowRefreshTime', nowStr());
-  callApi('get_heat_map', getDashboardScopeId()).then(function(r) {
-    if (!area) return;
-
-    area.textContent = '';
-    if (!r || !r.ok || !r.heat || Object.keys(r.heat).length === 0) {
-      var empty = document.createElement('div');
-      empty.className = 'empty-state';
-      empty.appendChild(el('span', null, 'The Engine is still learning your patterns'));
-      area.appendChild(empty);
-      return;
-    }
-
-    var meta = r.meta || {};
-    var entries = Object.entries(r.heat)
-      .sort(function(a, b) { return safeNum(b[1], 0) - safeNum(a[1], 0); })
-      .slice(0, 5);
-
-    if (!entries.length) {
-      var none = document.createElement('div');
-      none.className = 'empty-state';
-      none.appendChild(el('span', null, 'The Engine is still learning your patterns'));
-      area.appendChild(none);
-      return;
-    }
-
-    var list = document.createElement('div');
-    list.className = 'hot-now-list';
-    entries.forEach(function(entry) {
-      list.appendChild(buildHotNowItem(entry[0], entry[1], meta[entry[0]] || {}));
-    });
-    area.appendChild(list);
-  });
 }
 
 function loadDashboard() {
@@ -1491,11 +498,97 @@ function loadDashboard() {
       setTextById('heatRefreshTime', nowStr());
     });
 
-    loadHotNow();
-    loadHeatMap();
+    loadActiveMemory();
     loadLastRetrieval();
     loadActivityFeed();
-    loadConnGraph();
+  });
+}
+
+function loadActiveMemory() {
+  var area = document.getElementById('heatMapArea');
+  callApi('get_heat_map', getDashboardScopeId()).then(function(rHeat) {
+    if (!area) return;
+
+    // Fetch connection data in parallel
+    callApi('get_connections', getDashboardScopeId()).then(function(rConn) {
+      var connMap = {};
+      if (rConn && rConn.ok && rConn.connections) {
+        rConn.connections.forEach(function(c) {
+          connMap[c.source] = (connMap[c.source] || 0) + 1;
+          connMap[c.target] = (connMap[c.target] || 0) + 1;
+        });
+      }
+
+      if (!rHeat || !rHeat.ok || !rHeat.heat || Object.keys(rHeat.heat).length === 0) {
+        area.textContent = '';
+        var empt = document.createElement('div');
+        empt.className = 'empty-state';
+        var ico = el('div', 'empty-icon', '\uD83C\uDF21');
+        var msg = el('span', null, 'No memory data yet \u2014 the Engine learns as you use it');
+        empt.appendChild(ico);
+        empt.appendChild(msg);
+        area.appendChild(empt);
+        return;
+      }
+
+      var meta = rHeat.meta || {};
+      var entries = Object.entries(rHeat.heat)
+        .sort(function(a, b) { return b[1] - a[1]; })
+        .slice(0, 15);
+
+      var maxVal = entries.length > 0 ? entries[0][1] : 1;
+      area.textContent = '';
+      entries.forEach(function(entry) {
+        var id = entry[0];
+        var val = entry[1];
+        var norm = maxVal > 0 ? val / maxVal : 0;
+        var pct  = Math.max(2, Math.round(norm * 100));
+        var color = heatColor(norm);
+
+        var m = meta[id] || {};
+        var label = id.length > 18 ? '\u2026' + id.slice(-16) : id;
+        var tooltip = id;
+        if (m.collection) {
+          var col = m.collection.replace(/^claude--|^gemini--|^codex--/, '');
+          var preview = m.preview || '';
+          if (preview.length > 50) preview = preview.substring(0, 50) + '\u2026';
+          label = col + (preview ? ': ' + preview : '');
+          if (label.length > 40) label = label.substring(0, 40) + '\u2026';
+          tooltip = m.collection + ' | ' + (m.preview || id);
+        }
+
+        var row = document.createElement('div');
+        row.className = 'heat-bar-row';
+
+        var lbl = el('div', 'heat-bar-label', label);
+        lbl.title = tooltip;
+        row.appendChild(lbl);
+
+        var track = document.createElement('div');
+        track.className = 'heat-bar-track';
+        var fill = document.createElement('div');
+        fill.className = 'heat-bar-fill';
+        fill.style.width = pct + '%';
+        fill.style.background = color;
+        track.appendChild(fill);
+        row.appendChild(track);
+
+        var valEl = el('div', 'heat-bar-val', typeof val === 'number' ? val.toFixed(1) : String(val));
+        row.appendChild(valEl);
+
+        // Connection badge
+        var connCount = connMap[id] || 0;
+        if (connCount > 0) {
+          var connBadge = document.createElement('span');
+          connBadge.className = 'heat-bar-conn-badge';
+          connBadge.textContent = '\u2194 ' + connCount;
+          connBadge.title = connCount + ' topic connection' + (connCount > 1 ? 's' : '');
+          row.appendChild(connBadge);
+        }
+
+        area.appendChild(row);
+      });
+    });
   });
 }
 
@@ -1586,35 +679,6 @@ function buildHeatBarRow(id, val, maxVal, meta) {
   }
 
   return wrapper;
-}
-
-function loadHeatMap() {
-  var area = document.getElementById('heatMapArea');
-  callApi('get_heat_map', getDashboardScopeId()).then(function(r) {
-    if (!area) return;
-    if (!r || !r.ok || !r.heat || Object.keys(r.heat).length === 0) {
-      area.textContent = '';
-      var empt = document.createElement('div');
-      empt.className = 'empty-state';
-      var ico = el('div', 'empty-icon', '\uD83C\uDF21');
-      var msg = el('span', null, 'No heat data yet \u2014 the Engine learns as you use it');
-      empt.appendChild(ico);
-      empt.appendChild(msg);
-      area.appendChild(empt);
-      return;
-    }
-
-    var meta = r.meta || {};
-    var entries = Object.entries(r.heat)
-      .sort(function(a, b) { return b[1] - a[1]; })
-      .slice(0, 20);
-
-    var maxVal = entries.length > 0 ? entries[0][1] : 1;
-    area.textContent = '';
-    entries.forEach(function(entry) {
-      area.appendChild(buildHeatBarRow(entry[0], entry[1], maxVal, meta[entry[0]]));
-    });
-  });
 }
 
 function setRetrievalActionButtonState(button, active) {
@@ -1767,6 +831,14 @@ function loadLastRetrieval() {
     promptBox.appendChild(promptText);
     area.appendChild(promptBox);
 
+    if (!ret.results.length) {
+      var noResults = document.createElement('div');
+      noResults.className = 'empty-state';
+      noResults.appendChild(el('span', null, 'No memories matched this query.'));
+      area.appendChild(noResults);
+      return;
+    }
+
     // Each result
     ret.results.forEach(function(result, i) {
       var card = document.createElement('div');
@@ -1909,7 +981,17 @@ function loadActivityFeed() {
       return;
     }
 
-    r.entries.forEach(function(entry) {
+    // Deduplicate: hide consecutive identical prompts per AI
+    var seen = {};
+    var deduped = [];
+    (r.entries || []).forEach(function(entry) {
+      var key = String(entry.ai_id || 'all').toLowerCase() + '|' + String(entry.prompt || '').trim().toLowerCase().substring(0, 80);
+      if (seen[key]) return;
+      seen[key] = true;
+      deduped.push(entry);
+    });
+
+    deduped.forEach(function(entry) {
       var row = document.createElement('div');
       row.className = 'activity-entry';
 
@@ -1950,78 +1032,6 @@ function loadActivityFeed() {
   });
 }
 
-// Topic Connections table
-function loadConnGraph() {
-  var area = document.getElementById('connTableArea');
-  var emptyEl = document.getElementById('connEmptyState');
-
-  setTextById('connRefreshTime', nowStr());
-
-  callApi('get_connections', getDashboardScopeId()).then(function(r) {
-    if (!area) return;
-    if (!r || !r.ok || !r.connections || r.connections.length === 0) {
-      area.textContent = '';
-      area.appendChild(emptyEl || buildEmptyState('Connections emerge as topics co-occur in your work'));
-      if (emptyEl) emptyEl.style.display = 'block';
-      return;
-    }
-
-    area.textContent = '';
-    var connections = r.connections.slice(0, 15); // Top 15
-    var maxStr = connections[0].strength || 1;
-    var meta = r.meta || {};
-
-    connections.forEach(function(c) {
-      var row = document.createElement('div');
-      row.className = 'conn-row';
-
-      // Source label
-      var srcMeta = meta[c.source];
-      var srcLabel = srcMeta ? (srcMeta.collection || c.source).substring(0, 20) : c.source.substring(0, 16);
-      var srcEl = document.createElement('div');
-      srcEl.className = 'conn-id';
-      srcEl.textContent = srcLabel;
-      srcEl.title = srcMeta ? (srcMeta.collection + ': ' + (srcMeta.preview || '').substring(0, 80)) : c.source;
-
-      // Arrow
-      var arrow = document.createElement('div');
-      arrow.className = 'conn-arrow';
-      arrow.textContent = '\u2194';
-
-      // Target label
-      var tgtMeta = meta[c.target];
-      var tgtLabel = tgtMeta ? (tgtMeta.collection || c.target).substring(0, 20) : c.target.substring(0, 16);
-      var tgtEl = document.createElement('div');
-      tgtEl.className = 'conn-id';
-      tgtEl.style.textAlign = 'left';
-      tgtEl.textContent = tgtLabel;
-      tgtEl.title = tgtMeta ? (tgtMeta.collection + ': ' + (tgtMeta.preview || '').substring(0, 80)) : c.target;
-
-      // Strength bar
-      var track = document.createElement('div');
-      track.className = 'conn-bar-track';
-      var fill = document.createElement('div');
-      fill.className = 'conn-bar-fill';
-      var pct = Math.round((c.strength / maxStr) * 100);
-      fill.style.width = Math.max(4, pct) + '%';
-      var isEstab = c.strength >= 3.0;
-      fill.style.background = isEstab ? 'var(--ember)' : 'rgba(255,255,255,0.15)';
-      track.appendChild(fill);
-
-      // Strength value
-      var val = document.createElement('div');
-      val.className = 'conn-strength' + (isEstab ? ' conn-established' : '');
-      val.textContent = c.strength.toFixed(1);
-
-      row.appendChild(srcEl);
-      row.appendChild(arrow);
-      row.appendChild(tgtEl);
-      row.appendChild(track);
-      row.appendChild(val);
-      area.appendChild(row);
-    });
-  });
-}
 
 // Heat mode toggle
 document.getElementById('heatModeCard').addEventListener('click', function() {
@@ -2072,6 +1082,45 @@ function stopDashRefresh() {
 // =====================================================
 
 var expandedCol = null;
+var collectionUiCache = null;
+var collectionUiPromise = null;
+var collectionUiCacheAt = 0;
+
+function invalidateCollectionUiCache() {
+  collectionUiCache = null;
+  collectionUiPromise = null;
+  collectionUiCacheAt = 0;
+}
+
+function getCollectionUiData(force) {
+  var now = Date.now();
+  if (!force && collectionUiCache && now - collectionUiCacheAt < 2000) {
+    return Promise.resolve(collectionUiCache);
+  }
+  if (!force && collectionUiPromise) return collectionUiPromise;
+
+  collectionUiPromise = Promise.all([
+    callApi('get_collections'),
+    callApi('get_collection_labels'),
+    callApi('get_collection_states'),
+    callApi('detect_clis')
+  ]).then(function(results) {
+    var data = {
+      collections: results[0],
+      labels: results[1],
+      states: results[2],
+      clis: results[3]
+    };
+    collectionUiCache = data;
+    collectionUiCacheAt = Date.now();
+    collectionUiPromise = null;
+    return data;
+  }).catch(function(err) {
+    collectionUiPromise = null;
+    throw err;
+  });
+  return collectionUiPromise;
+}
 
 function buildColItem(col, labels, disabledMap) {
   var wrap   = document.createElement('div');
@@ -2128,6 +1177,7 @@ function buildColItem(col, labels, disabledMap) {
       if (r && r.ok) {
         labelValue = nextValue;
         if (labels) labels[col.name] = nextValue;
+        invalidateCollectionUiCache();
         renderLabel();
         showToast(r.msg || ('Renamed: ' + currentLabel()), 'ok');
       } else {
@@ -2253,6 +1303,7 @@ function buildColItem(col, labels, disabledMap) {
       if (r && r.ok) {
         disabled = !!r.disabled;
         if (disabledMap) disabledMap[col.name] = disabled;
+        invalidateCollectionUiCache();
         toggleInput.checked = !disabled;
         header.classList.toggle('disabled', disabled);
         showToast((disabled ? 'Disabled' : 'Enabled') + ': ' + currentLabel(), 'ok');
@@ -2269,7 +1320,8 @@ function buildColItem(col, labels, disabledMap) {
       if (r && r.ok) {
         showToast('Deleted: ' + col.name, 'ok');
         if (expandedCol === col.name) expandedCol = null;
-        loadCollections();
+        invalidateCollectionUiCache();
+        loadCollections(true);
       } else {
         showToast((r && r.msg) || 'Delete failed', 'err');
       }
@@ -2432,6 +1484,7 @@ function buildOwnerSection(ownerKey, collections, labels, disabledMap) {
       if (save && newVal && newVal !== current) {
         ownerLabels[ownerKey] = newVal;
         callApi('rename_collection_label', '__owner_' + ownerKey, newVal);
+        invalidateCollectionUiCache();
         label.textContent = newVal;
       } else {
         label.textContent = current;
@@ -2484,7 +1537,8 @@ function buildOwnerSection(ownerKey, collections, labels, disabledMap) {
     });
     Promise.all(promises).then(function() {
       showToast('Deleted all in ' + sectionLabel, 'ok');
-      loadCollections();
+      invalidateCollectionUiCache();
+      loadCollections(true);
     });
   });
   rightSide.appendChild(delSectionBtn);
@@ -2502,7 +1556,8 @@ function buildOwnerSection(ownerKey, collections, labels, disabledMap) {
     Promise.all(promises).then(function() {
       var state = enable ? 'Enabled' : 'Disabled';
       showToast(state + ' all in ' + (ownerLabels[ownerKey] || ownerKey), 'ok');
-      loadCollections();
+      invalidateCollectionUiCache();
+      loadCollections(true);
     });
   });
 
@@ -2551,7 +1606,7 @@ function buildOwnerSection(ownerKey, collections, labels, disabledMap) {
   return section;
 }
 
-function loadCollections() {
+function loadCollections(force) {
   var list = document.getElementById('colList');
   list.textContent = '';
   var loadRow = document.createElement('div');
@@ -2562,16 +1617,11 @@ function loadCollections() {
   loadRow.appendChild(el('span', null, ' Loading collections...'));
   list.appendChild(loadRow);
 
-  Promise.all([
-    callApi('get_collections'),
-    callApi('get_collection_labels'),
-    callApi('get_collection_states'),
-    callApi('detect_clis')
-  ]).then(function(results) {
-    var r = results[0];
-    var labelsRes = results[1];
-    var statesRes = results[2];
-    var cliRes = results[3];
+  getCollectionUiData(!!force).then(function(data) {
+    var r = data.collections;
+    var labelsRes = data.labels;
+    var statesRes = data.states;
+    var cliRes = data.clis;
     var labels = labelsRes && labelsRes.ok && labelsRes.labels ? labelsRes.labels : {};
     var disabledMap = statesRes && statesRes.ok && statesRes.disabled ? statesRes.disabled : {};
     setDetectedCLIs(cliRes && cliRes.ok && cliRes.clis ? cliRes.clis : {});
@@ -2586,7 +1636,7 @@ function loadCollections() {
       // API bridge might not be ready yet — retry once after a short delay
       if (!loadCollections._retried) {
         loadCollections._retried = true;
-        setTimeout(function() { loadCollections._retried = false; loadCollections(); }, 800);
+        setTimeout(function() { loadCollections._retried = false; loadCollections(true); }, 800);
       } else {
         list.appendChild(buildEmptyState('No collections found'));
         loadCollections._retried = false;
@@ -2824,12 +1874,9 @@ function refreshImportCollections(selectedName) {
   loadingOption.textContent = 'Loading collections...';
   select.appendChild(loadingOption);
 
-  return Promise.all([
-    callApi('get_collections'),
-    callApi('get_collection_labels')
-  ]).then(function(results) {
-    var collectionsRes = results[0];
-    var labelsRes = results[1];
+  return getCollectionUiData(false).then(function(data) {
+    var collectionsRes = data.collections;
+    var labelsRes = data.labels;
     var labels = labelsRes && labelsRes.ok && labelsRes.labels ? labelsRes.labels : {};
     var hasSelected = false;
     var totalCollections = 0;
@@ -3049,7 +2096,8 @@ function importFilesIntoExistingCollection(col, button, label) {
     return callApi('import_files', r.paths, col.name, 'shared').then(function(importResult) {
       if (importResult && importResult.ok) {
         showToast((importResult.msg) || ('Added files to ' + label), 'ok');
-        loadCollections();
+        invalidateCollectionUiCache();
+        loadCollections(true);
         if (document.getElementById('importWizard').classList.contains('visible')) {
           refreshImportCollections(col.name);
         }
@@ -3174,7 +2222,8 @@ document.getElementById('btnRunImport').addEventListener('click', function() {
         var topicArea = document.getElementById('existingNewTopicArea');
         if (topicArea) topicArea.style.display = 'none';
         resetImportSelections();
-        loadCollections();
+        invalidateCollectionUiCache();
+        loadCollections(true);
         return refreshImportCollections(destination.fullName);
       })
     : callApi('import_files', selectedPaths, draft.name, draft.scope).then(function(r) {
@@ -3202,7 +2251,8 @@ document.getElementById('btnRunImport').addEventListener('click', function() {
           if (nameInput) nameInput.value = '';
           if (scopeSelect) scopeSelect.value = 'shared';
           resetImportSelections();
-          loadCollections();
+          invalidateCollectionUiCache();
+          loadCollections(true);
           setImportMode(IMPORT_MODE_EXISTING);
           return refreshImportCollections(fullName);
         });
@@ -3490,12 +2540,12 @@ function loadWorkspaces() {
 
   Promise.all([
     callApi('get_workspaces'),
-    callApi('get_collections'),
-    callApi('detect_clis')
+    getCollectionUiData(false)
   ]).then(function(results) {
     var workspacesRes = results[0];
-    var collectionsRes = results[1];
-    var cliRes = results[2];
+    var collectionData = results[1] || {};
+    var collectionsRes = collectionData.collections;
+    var cliRes = collectionData.clis;
     var workspaces = workspacesRes && workspacesRes.ok && workspacesRes.workspaces ? workspacesRes.workspaces : {};
     setDetectedCLIs(cliRes && cliRes.ok && cliRes.clis ? cliRes.clis : {});
 
@@ -3706,10 +2756,16 @@ function setProvider(name) {
     c.classList.toggle('selected', c.getAttribute('data-provider') === name);
   });
   currentProvider = name;
+  var ollamaSection = document.getElementById('ollamaStatusSection');
+  if (ollamaSection) ollamaSection.style.display = name === 'ollama' ? '' : 'none';
 }
 
 document.querySelectorAll('.provider-card').forEach(function(card) {
-  card.addEventListener('click', function() { setProvider(card.getAttribute('data-provider')); });
+  card.addEventListener('click', function() {
+    var provider = card.getAttribute('data-provider');
+    setProvider(provider);
+    populateModelSelect(provider);
+  });
 });
 
 function getLaunchDirInputId(cli) {
@@ -3850,16 +2906,25 @@ function resetLaunchDir(cli) {
 function loadSettings() {
   callApi('get_config').then(function(r) {
     if (!r) return;
-    setProvider(r.embedding_provider || 'ollama');
+    var provider = r.embedding_provider || 'ollama';
 
     var be = document.getElementById('backendSelect');
-    if (be && r.backend) be.value = r.backend;
+    if (be && r.backend) {
+      var backendValue = r.backend === 'chroma' ? 'chromadb' : (r.backend === 'sqlite_vss' ? 'sqlite-vec' : r.backend);
+      be.value = backendValue;
+      if (be.value !== backendValue) be.value = 'chromadb';
+    }
 
     var nm = document.getElementById('namespaceModeSelect');
     if (nm) nm.value = r.namespace_mode || 'scoped';
 
     var dd = document.getElementById('dataDir');
     if (dd && r.data_dir) dd.value = r.data_dir;
+
+    var ou = document.getElementById('ollamaUrl');
+    if (ou) ou.value = (r.ollama_url || 'http://localhost:11434/api/embeddings')
+      .replace('/api/embeddings', '')
+      .replace('/api/embed', '');
 
     var st = document.getElementById('simThreshold');
     if (st && r.similarity_threshold != null) st.value = r.similarity_threshold;
@@ -3868,12 +2933,133 @@ function loadSettings() {
     if (mr && r.max_results != null) mr.value = r.max_results;
 
     var mp = document.getElementById('maxPreviewChars');
-    if (mp && r.max_preview_chars != null) mp.value = r.max_preview_chars;
+    if (mp && r.max_preview != null) mp.value = r.max_preview;
 
-    checkOllamaStatus();
-    loadOllamaModels();
+    var aq = document.getElementById('autoQueryToggle');
+    if (aq) aq.checked = (String(r.auto_query).toLowerCase() === 'true');
+
+    var ems = document.getElementById('embeddingModelSelect');
+    if (ems) {
+      var p = provider;
+      var model = r.embedding_model || '';
+      if (p === 'openai') model = r.openai_embedding_model || model;
+      if (p === 'google') model = r.google_embedding_model || model;
+      if (p === 'openrouter') model = r.openrouter_embedding_model || model;
+      ems.dataset.current = model;
+    }
+
+    markSavedProviderKey('openai', r.openai_key);
+    markSavedProviderKey('google', r.google_key);
+    markSavedProviderKey('openrouter', r.openrouter_key);
+
+    setProvider(provider);
+    populateModelSelect(provider);
+    if (provider === 'ollama') {
+      checkOllamaStatus();
+    }
+
+    // Reset re-embed warning on load
+    var warn = document.getElementById('modelChangeWarning');
+    if (warn) warn.style.display = 'none';
+    var ems = document.getElementById('embeddingModelSelect');
+    if (ems) ems.dataset.initial = ems.dataset.current || ems.value;
+    
   });
 }
+
+var PROVIDER_MODELS = {};
+
+function getProviderKeyValue(provider) {
+  var inputMap = { openai: 'keyOpenAI', google: 'keyGoogle', openrouter: 'keyOpenRouter' };
+  var input = document.getElementById(inputMap[provider]);
+  return input ? input.value.trim() : '';
+}
+
+function markSavedProviderKey(provider, savedValue) {
+  var inputMap = { openai: 'keyOpenAI', google: 'keyGoogle', openrouter: 'keyOpenRouter' };
+  var statusEl = document.getElementById('verifyStatus-' + provider);
+  var input = document.getElementById(inputMap[provider]);
+  var hasSaved = !!savedValue;
+  if (input) {
+    input.dataset.saved = hasSaved ? 'true' : 'false';
+    if (hasSaved && !input.value) input.placeholder = 'Saved key configured';
+  }
+  if (statusEl && hasSaved) {
+    statusEl.textContent = 'Saved key configured';
+    statusEl.className = 'verify-status saved';
+  } else if (statusEl && !hasSaved && statusEl.className.indexOf('verify-status') === 0) {
+    statusEl.textContent = '';
+    statusEl.className = 'verify-status';
+  }
+}
+
+function populateModelSelect(provider) {
+  var sel = document.getElementById('embeddingModelSelect');
+  if (!sel) return;
+  var current = sel.dataset.current || '';
+
+  // Ollama: live Ollama discovery
+  if (provider === 'ollama') {
+    loadOllamaModels();
+    return;
+  }
+
+  // Everyone else: ask the backend (OpenAI=live fetch, Google=best-effort, OpenRouter=supported list)
+  sel.innerHTML = '';
+  var loading = document.createElement('option');
+  loading.value = '';
+  loading.textContent = 'Loading models...';
+  sel.appendChild(loading);
+  sel.disabled = true;
+
+  var cacheKey = provider + '_models';
+  var keyValue = getProviderKeyValue(provider);
+  var cached = keyValue ? '' : sel.dataset[cacheKey];
+  if (cached) {
+    try {
+      var parsed = JSON.parse(cached);
+      if (parsed.length > 0) {
+        _fillModelSelectFromData(sel, parsed, current);
+        return;
+      }
+    } catch (e) {}
+  }
+
+  callApi('get_provider_models', provider, keyValue).then(function(r) {
+    if (!r || !r.ok || !r.models || r.models.length === 0) {
+      sel.innerHTML = '';
+      var opt = document.createElement('option');
+      opt.value = current || '';
+      opt.textContent = (r && r.msg) ? ('Could not load: ' + r.msg) : 'No models available';
+      sel.appendChild(opt);
+      sel.disabled = false;
+      return;
+    }
+    _fillModelSelectFromData(sel, r.models, current);
+    if (r.live && !keyValue) sel.dataset[cacheKey] = JSON.stringify(r.models);
+  });
+}
+
+function _fillModelSelectFromData(sel, models, current) {
+  sel.innerHTML = '';
+  sel.disabled = false;
+  models.forEach(function(m) {
+    var opt = document.createElement('option');
+    opt.value = m.id || m.name;
+    var label = m.name || m.id;
+    if (m.description) label += ' \u2014 ' + m.description;
+    opt.textContent = label;
+    var val = m.id || m.name;
+    if (val === current || current.indexOf(val) === 0) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  if (!sel.value && models.length > 0) sel.value = models[0].id || models[0].name;
+}
+
+document.getElementById('embeddingModelSelect').addEventListener('change', function() {
+  var warn = document.getElementById('modelChangeWarning');
+  if (warn) warn.style.display = '';
+});
 
 function checkOllamaStatus() {
   var dot = document.getElementById('ollamaStatusDot');
@@ -3896,21 +3082,79 @@ document.getElementById('btnCheckOllama').addEventListener('click', function() {
   loadOllamaModels();
 });
 
+// ── Verify Provider Keys ────────────────────────────
+
+function verifyKey(provider) {
+  var statusEl = document.getElementById('verifyStatus-' + provider);
+  if (!statusEl) return;
+
+  // Grab the key from the input field (it may not be saved yet)
+  var keyValue = getProviderKeyValue(provider);
+
+  statusEl.textContent = 'Testing...';
+  statusEl.className = 'verify-status testing';
+  callApi('verify_provider_auth', provider, keyValue).then(function(r) {
+    if (r && r.ok) {
+      statusEl.textContent = (r.msg || 'Connected') + '; saved';
+      statusEl.className = 'verify-status ok';
+      saveCurrentSettings({ silent: true, skipVerify: true });
+      var sel = document.getElementById('embeddingModelSelect');
+      if (sel && currentProvider === provider) {
+        delete sel.dataset[provider + '_models'];
+        populateModelSelect(provider);
+      }
+    } else {
+      statusEl.textContent = (r && r.msg) || 'Failed';
+      statusEl.className = 'verify-status err';
+    }
+  });
+}
+
+function verifyModelCheck() {
+  var provider = currentProvider;
+  var sel = document.getElementById('embeddingModelSelect');
+  var statusEl = document.getElementById('verifyModelStatus');
+  if (!sel || !statusEl) return;
+  var model = sel.value.trim();
+  if (!model) return;
+  statusEl.textContent = 'Verifying...';
+  statusEl.className = 'verify-status testing';
+  callApi('verify_model', provider, model).then(function(r) {
+    if (r && r.ok) {
+      statusEl.textContent = r.msg || 'Ready';
+      statusEl.className = 'verify-status ok';
+    } else {
+      statusEl.textContent = (r && r.msg) || 'Not validated';
+      statusEl.className = 'verify-status err';
+    }
+  });
+}
+
 function loadOllamaModels() {
-  var sel = document.getElementById('ollamaModelSelect');
+  var sel = document.getElementById('embeddingModelSelect');
   if (!sel) return;
+  var current = sel.dataset.current || '';
+
+  sel.innerHTML = '';
+  var loading = document.createElement('option');
+  loading.value = '';
+  loading.textContent = 'Detecting Ollama models...';
+  sel.appendChild(loading);
+  sel.disabled = true;
+
   callApi('get_ollama_models').then(function(r) {
-    if (!r || !r.ok) {
-      sel.innerHTML = '';
+    sel.innerHTML = '';
+    sel.disabled = false;
+
+    if (!r || !r.ok || !r.models || r.models.length === 0) {
       var opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = 'Ollama not reachable';
+      opt.value = current || 'bge-m3';
+      opt.textContent = (r && r.msg) ? r.msg : 'No models — run: ollama pull bge-m3';
       sel.appendChild(opt);
       return;
     }
-    sel.innerHTML = '';
-    var current = r.current || 'bge-m3';
-    // Embedding models first, then others
+
+    var hasSelected = false;
     var embeds = r.models.filter(function(m) { return m.is_embedding; });
     var others = r.models.filter(function(m) { return !m.is_embedding; });
 
@@ -3921,7 +3165,10 @@ function loadOllamaModels() {
         var opt = document.createElement('option');
         opt.value = m.name;
         opt.textContent = m.name + (m.size_gb ? ' (' + m.size_gb + ' GB)' : '');
-        if (m.name === current || current.indexOf(m.name.split(':')[0]) === 0) opt.selected = true;
+        if (!hasSelected && (m.name === current || current.indexOf(m.name.split(':')[0]) === 0)) {
+          opt.selected = true;
+          hasSelected = true;
+        }
         grp.appendChild(opt);
       });
       sel.appendChild(grp);
@@ -3934,28 +3181,29 @@ function loadOllamaModels() {
         var opt = document.createElement('option');
         opt.value = m.name;
         opt.textContent = m.name + (m.size_gb ? ' (' + m.size_gb + ' GB)' : '');
-        if (m.name === current) opt.selected = true;
+        if (!hasSelected && m.name === current) {
+          opt.selected = true;
+          hasSelected = true;
+        }
         grp2.appendChild(opt);
       });
       sel.appendChild(grp2);
     }
 
-    if (r.models.length === 0) {
-      var opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = 'No models found';
-      sel.appendChild(opt);
+    if (!hasSelected && r.models.length > 0) {
+      var fallback = r.models.find(function(m) { return m.name === 'bge-m3' || m.name.indexOf('bge-m3:') === 0; });
+      sel.value = (fallback || r.models[0]).name;
     }
   });
 }
 
-document.getElementById('ollamaModelSelect').addEventListener('change', function() {
+document.getElementById('embeddingModelSelect').addEventListener('change', function() {
   var model = this.value;
   if (!model) return;
-  callApi('set_embedding_model', model).then(function(r) {
-    if (r && r.ok) showToast(r.msg || 'Model switched', 'ok');
-    else showToast((r && r.msg) || 'Failed to switch model', 'err');
-  });
+
+  var warn = document.getElementById('modelChangeWarning');
+  if (warn) warn.style.display = '';
+  verifyModelCheck();
 });
 
 document.getElementById('btnBrowse').addEventListener('click', function() {
@@ -3964,31 +3212,334 @@ document.getElementById('btnBrowse').addEventListener('click', function() {
   });
 });
 
-document.getElementById('btnSaveSettings').addEventListener('click', function() {
+var promoLink = document.getElementById('promoLink');
+if (promoLink) {
+  promoLink.addEventListener('click', function(ev) {
+    ev.preventDefault();
+    openExternalUrl(promoLink.href);
+  });
+}
+
+function collectSettingsConfig() {
   var config = {
     embedding_provider:  currentProvider,
     backend:             document.getElementById('backendSelect').value,
     namespace_mode:      document.getElementById('namespaceModeSelect').value,
     data_dir:            document.getElementById('dataDir').value.trim(),
-    similarity_threshold: safeNum(document.getElementById('simThreshold').value, 0.7),
-    max_results:          parseInt(document.getElementById('maxResults').value, 10) || 10,
-    max_preview_chars:    parseInt(document.getElementById('maxPreviewChars').value, 10) || 200
+    ollama_url:           document.getElementById('ollamaUrl').value.trim(),
+    similarity_threshold: safeNum(document.getElementById('simThreshold').value, 0.45),
+    max_results:          parseInt(document.getElementById('maxResults').value, 10) || 5,
+    max_preview_chars:    parseInt(document.getElementById('maxPreviewChars').value, 10) || 800,
+    auto_query:           document.getElementById('autoQueryToggle').checked ? 'true' : 'false'
   };
   var oKey = document.getElementById('keyOpenAI').value.trim();
   var gKey = document.getElementById('keyGoogle').value.trim();
+  var orKey = document.getElementById('keyOpenRouter').value.trim();
+  var emVal = document.getElementById('embeddingModelSelect').value.trim();
   if (oKey) config.openai_api_key = oKey;
   if (gKey) config.google_api_key = gKey;
+  if (orKey) config.openrouter_api_key = orKey;
+  if (emVal) {
+    if (currentProvider === 'openrouter') config.openrouter_embedding_model = emVal;
+    else if (currentProvider === 'openai') config.openai_embedding_model = emVal;
+    else if (currentProvider === 'google') config.google_embedding_model = emVal;
+    else config.embedding_model = emVal;
+  }
+  return config;
+}
 
-  callApi('save_settings', config).then(function(r) {
+function saveCurrentSettings(options) {
+  options = options || {};
+  var config = collectSettingsConfig();
+
+  // Detect model change for re-embed warning
+  var ems = document.getElementById('embeddingModelSelect');
+  var modelChanged = ems && ems.dataset.initial && ems.value !== ems.dataset.initial;
+
+  return callApi('save_settings', config).then(function(r) {
     if (r && r.ok) {
-      showToast((r.msg) || 'Settings saved', 'ok');
-      document.getElementById('keyOpenAI').value = '';
-      document.getElementById('keyGoogle').value = '';
+      var msg = (r.msg) || 'Settings saved';
+      if (modelChanged) msg += '. Re-embed your data with: ember_memory.ingest --rebuild-all';
+      if (!options.silent) showToast(msg, modelChanged ? 'warn' : 'ok');
+      markSavedProviderKey('openai', config.openai_api_key || document.getElementById('keyOpenAI').dataset.saved === 'true');
+      markSavedProviderKey('google', config.google_api_key || document.getElementById('keyGoogle').dataset.saved === 'true');
+      markSavedProviderKey('openrouter', config.openrouter_api_key || document.getElementById('keyOpenRouter').dataset.saved === 'true');
+      if (!options.skipVerify && currentProvider !== 'ollama') verifyKey(currentProvider);
     } else {
       showToast((r && r.msg) || 'Save failed', 'err');
     }
   });
+}
+
+document.getElementById('btnSaveSettings').addEventListener('click', function() {
+  saveCurrentSettings();
 });
+
+var btnSaveProviderSettings = document.getElementById('btnSaveProviderSettings');
+if (btnSaveProviderSettings) {
+  btnSaveProviderSettings.addEventListener('click', function() {
+    saveCurrentSettings();
+  });
+}
+
+['ollamaUrl', 'keyOpenAI', 'keyGoogle', 'keyOpenRouter', 'embeddingModelSelect'].forEach(function(id) {
+  var field = document.getElementById(id);
+  if (!field) return;
+  field.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      saveCurrentSettings();
+    }
+  });
+});
+
+var customCliIdDirty = false;
+
+function slugifyCustomCliId(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function addCustomCliFromForm() {
+  var nameInput = document.getElementById('customCliName');
+  var idInput = document.getElementById('customCliId');
+  var cliName = nameInput ? nameInput.value.trim() : '';
+  var cliId = idInput ? slugifyCustomCliId(idInput.value) : '';
+  if (!cliName) {
+    showToast('Add an AI app name first', 'err');
+    if (nameInput) nameInput.focus();
+    return;
+  }
+  if (!cliId) {
+    showToast('Add a memory label first', 'err');
+    if (idInput) idInput.focus();
+    return;
+  }
+
+  callApi('add_custom_cli', cliId, cliName).then(function(r) {
+    if (r && r.ok) {
+      showToast(r.msg || 'AI app added', 'ok');
+      if (nameInput) nameInput.value = '';
+      if (idInput) idInput.value = '';
+      customCliIdDirty = false;
+      loadCustomClis();
+    } else {
+      showToast((r && r.msg) || 'Failed to add AI app', 'err');
+    }
+  });
+}
+
+var customCliNameInput = document.getElementById('customCliName');
+var customCliIdInput = document.getElementById('customCliId');
+if (customCliNameInput) {
+  customCliNameInput.addEventListener('input', function() {
+    if (customCliIdInput && !customCliIdDirty) {
+      customCliIdInput.value = slugifyCustomCliId(customCliNameInput.value);
+    }
+  });
+  customCliNameInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') addCustomCliFromForm();
+  });
+}
+if (customCliIdInput) {
+  customCliIdInput.addEventListener('input', function() {
+    customCliIdDirty = true;
+    customCliIdInput.value = slugifyCustomCliId(customCliIdInput.value);
+  });
+  customCliIdInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') addCustomCliFromForm();
+  });
+}
+
+document.getElementById('btnAddCustomCli').addEventListener('click', addCustomCliFromForm);
+
+function buildSnippetBlock(title, note, text) {
+  var block = document.createElement('div');
+  block.className = 'snippet-block';
+
+  var head = document.createElement('div');
+  head.className = 'snippet-head';
+  head.appendChild(el('div', 'snippet-title', title));
+
+  var copyBtn = document.createElement('button');
+  copyBtn.className = 'btn btn-secondary btn-sm';
+  copyBtn.textContent = 'Copy';
+  copyBtn.addEventListener('click', function() {
+    copyTextToClipboard(text || '').then(function() {
+      showToast('Copied', 'ok');
+    }).catch(function() {
+      showToast('Unable to copy', 'err');
+    });
+  });
+  head.appendChild(copyBtn);
+
+  if (note) {
+    block.appendChild(head);
+    block.appendChild(el('div', 'snippet-note', note));
+  } else {
+    block.appendChild(head);
+  }
+
+  var code = document.createElement('div');
+  code.className = 'snippet-code';
+  code.textContent = text || '';
+
+  block.appendChild(code);
+  return block;
+}
+
+function buildPartnerSetupPrompt(c) {
+  return [
+    'I am setting up Ember Memory for this AI app.',
+    '',
+    'App name: ' + (c.name || c.id),
+    'Memory label: ' + c.id,
+    '',
+    'Please help me connect this app to Ember Memory cleanly and safely. First, check whether this app supports MCP servers, prompt hooks, pre-prompt commands, or custom commands that receive the prompt through stdin.',
+    '',
+    'Before changing anything, please back up any config file you edit or show me the exact backup command. Then make the smallest safe change, check that the config format stays valid, and explain what changed in plain language.',
+    '',
+    'If the app supports MCP, please help me add this MCP server config safely:',
+    '',
+    c.mcp_config || '',
+    '',
+    'If the app supports prompt hooks or pre-prompt commands, please help me add this hook command safely:',
+    '',
+    c.hook_cmd || '',
+    '',
+    'If neither integration type is supported, tell me that clearly and suggest the closest manual workflow using Ember Memory search/store tools. Please explain each step for someone who is not technical.'
+  ].join('\n');
+}
+
+function buildCustomCliCard(c, ignored) {
+  var card = document.createElement('div');
+  card.className = 'custom-cli-card';
+
+  var main = document.createElement('div');
+  main.className = 'custom-cli-main';
+  main.appendChild(el('div', 'custom-cli-name', c.name || c.id));
+  main.appendChild(el('div', 'custom-cli-id', 'ID: ' + c.id));
+  if (ignored) {
+    main.appendChild(el('span', 'badge badge-warn', 'Basic RAG Mode'));
+  }
+
+  var btn = document.createElement('button');
+  btn.className = 'btn btn-danger btn-sm';
+  btn.textContent = 'Remove';
+  btn.addEventListener('click', function() {
+    removeCustomCli(c.id);
+  });
+  main.appendChild(btn);
+  card.appendChild(main);
+
+  card.appendChild(el(
+    'div',
+    'custom-cli-help',
+    'This creates a separate memory lane in Ember Memory. It does not install or modify the AI app. Use the instructions below when you are ready to connect that app.'
+  ));
+
+  var toggleRow = document.createElement('label');
+  toggleRow.className = 'toggle-row';
+
+  var toggleWrap = document.createElement('label');
+  toggleWrap.className = 'toggle';
+  toggleWrap.title = 'Pause adaptive Engine scoring and heat growth for this lane';
+
+  var checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.className = 'ignore-toggle';
+  if (ignored) checkbox.checked = true;
+
+  var track = document.createElement('div');
+  track.className = 'toggle-track';
+
+  var thumb = document.createElement('div');
+  thumb.className = 'toggle-thumb';
+
+  toggleWrap.appendChild(checkbox);
+  toggleWrap.appendChild(track);
+  toggleWrap.appendChild(thumb);
+  toggleRow.appendChild(toggleWrap);
+  toggleRow.appendChild(el('span', null, 'Use basic RAG (pause adaptive heat)'));
+  card.appendChild(toggleRow);
+
+  checkbox.addEventListener('change', function() {
+    callApi('toggle_cli_ignore', c.id).then(function(r) {
+      if (r && r.ok !== undefined) {
+        showToast(
+          (c.name || c.id) + (r.ignored ? ': basic RAG mode enabled' : ': adaptive heat active'),
+          r.ignored ? 'inf' : 'ok'
+        );
+        loadCustomClis();
+        loadDashboard();
+      } else {
+        checkbox.checked = !checkbox.checked;
+        showToast('Toggle failed', 'err');
+      }
+    });
+  });
+
+  var details = document.createElement('details');
+  details.className = 'custom-cli-details';
+  var summary = document.createElement('summary');
+  summary.textContent = 'Connection instructions';
+  details.appendChild(summary);
+  details.appendChild(buildSnippetBlock(
+    'Prompt hook',
+    'Use this when the app has a setting named hooks, pre-prompt command, prompt command, custom command, BeforeAgent, or UserPromptSubmit. A quick check: search that app\'s settings or docs for "hook" or "stdin". If it says the current prompt is sent to the command through standard input/stdin, this is the snippet to use.',
+    c.hook_cmd || ''
+  ));
+  details.appendChild(buildSnippetBlock(
+    'MCP server',
+    'Use this when the app has an MCP servers section. Common local config places: Linux: ~/.claude.json, ~/.gemini/settings.json, ~/.codex/config.toml. Windows: %USERPROFILE%\\.claude.json, %USERPROFILE%\\.gemini\\settings.json, %USERPROFILE%\\.codex\\config.toml. Other apps may keep MCP settings in their own settings screen.',
+    c.mcp_config || ''
+  ));
+  details.appendChild(buildSnippetBlock(
+    'Ask your AI to help',
+    'Copy this prompt into the AI app you are connecting, or into an assistant that can help edit files safely. It includes the exact snippets and asks for backups before changes.',
+    buildPartnerSetupPrompt(c)
+  ));
+  card.appendChild(details);
+
+  return card;
+}
+
+function loadCustomClis() {
+  Promise.all([
+    callApi('get_custom_clis'),
+    callApi('get_engine_stats')
+  ]).then(function(results) {
+    var r = results[0];
+    var statsR = results[1];
+    var pList = document.getElementById('customClisList');
+    if (!pList) return;
+    pList.innerHTML = '';
+    var ignored = (statsR && statsR.stats && statsR.stats.ignored_clis) || {};
+    renderCustomCliFilters((r && r.ok && r.clis) ? r.clis : []);
+    if (!r || !r.ok || !r.clis || r.clis.length === 0) {
+      pList.innerHTML = '<div class="setting-hint">No additional AI app lanes yet.</div>';
+      return;
+    }
+    r.clis.forEach(function(c) {
+      pList.appendChild(buildCustomCliCard(c, !!ignored[c.id]));
+    });
+  });
+}
+
+function removeCustomCli(cliId) {
+  if (!confirm("Remove the memory lane '" + cliId + "'?")) return;
+  callApi('remove_custom_cli', cliId).then(function(r) {
+    if (r && r.ok) {
+      showToast(r.msg, 'ok');
+      loadCustomClis();
+    } else {
+      showToast((r && r.msg) || 'Failed to remove lane', 'err');
+    }
+  });
+}
 
 // =====================================================
 // CLI STATUS
@@ -4018,7 +3569,7 @@ function buildCLICard(def, info, ignored) {
   badgeRow.appendChild(instBadge);
 
   if (ignored) {
-    badgeRow.appendChild(el('span', 'badge badge-warn', 'Heat Ignored'));
+    badgeRow.appendChild(el('span', 'badge badge-warn', 'Basic RAG Mode'));
   }
 
   // Toggle row
@@ -4027,7 +3578,7 @@ function buildCLICard(def, info, ignored) {
 
   var toggleWrap = document.createElement('label');
   toggleWrap.className = 'toggle';
-  toggleWrap.title = 'Ignore this CLI in heat tracking';
+  toggleWrap.title = 'Pause adaptive Engine scoring and heat growth for this CLI';
 
   var checkbox = document.createElement('input');
   checkbox.type = 'checkbox';
@@ -4045,7 +3596,7 @@ function buildCLICard(def, info, ignored) {
   toggleWrap.appendChild(thumb);
 
   toggleRow.appendChild(toggleWrap);
-  toggleRow.appendChild(el('span', null, 'Ignore in heat tracking'));
+  toggleRow.appendChild(el('span', null, 'Use basic RAG (pause adaptive heat)'));
 
   card.appendChild(nameEl);
   card.appendChild(pathEl);
@@ -4058,11 +3609,11 @@ function buildCLICard(def, info, ignored) {
         cliIgnored[def.id] = r.ignored;
         var existingWarn = badgeRow.querySelector('.badge-warn');
         if (r.ignored) {
-          if (!existingWarn) badgeRow.appendChild(el('span', 'badge badge-warn', 'Heat Ignored'));
-          showToast(def.label + ': heat ignored', 'inf');
+          if (!existingWarn) badgeRow.appendChild(el('span', 'badge badge-warn', 'Basic RAG Mode'));
+          showToast(def.label + ': basic RAG mode enabled', 'inf');
         } else {
           if (existingWarn) existingWarn.remove();
-          showToast(def.label + ': heat tracking active', 'ok');
+          showToast(def.label + ': adaptive heat active', 'ok');
         }
       } else {
         checkbox.checked = !checkbox.checked;
@@ -4095,34 +3646,201 @@ function loadCLIStatus() {
     var ignored = (statsR && statsR.stats && statsR.stats.ignored_clis) || {};
     setDetectedCLIs(clis);
 
-    cliIgnored = {
-      claude: !!ignored.claude,
-      gemini: !!ignored.gemini,
-      codex:  !!ignored.codex
-    };
+    cliIgnored = Object.assign({}, ignored);
 
     grid.textContent = '';
     CLI_DEFS.forEach(function(def) {
       var info = clis[def.id] || {};
       grid.appendChild(buildCLICard(def, info, !!cliIgnored[def.id]));
     });
+    loadCustomClis();
   });
 }
 
 document.getElementById('btnInstallAll').addEventListener('click', function() {
   var btn = document.getElementById('btnInstallAll');
+  var resultEl = document.getElementById('installResult');
   btn.disabled = true;
   btn.textContent = 'Installing...';
+  if (resultEl) {
+    resultEl.className = 'install-result';
+    resultEl.textContent = 'Writing CLI config files...';
+  }
   callApi('run_install').then(function(r) {
     btn.disabled = false;
     btn.textContent = 'Run Install';
     if (r && r.ok) {
+      if (resultEl) {
+        resultEl.className = 'install-result ok';
+        resultEl.textContent = r.msg || 'Install complete. Restart your CLIs to activate hooks.';
+      }
       showToast((r.msg) || 'Install complete', 'ok');
       loadCLIStatus();
     } else {
+      if (resultEl) {
+        resultEl.className = 'install-result err';
+        resultEl.textContent = (r && r.msg) || 'Install failed';
+      }
       showToast((r && r.msg) || 'Install failed', 'err');
     }
+  }).catch(function(err) {
+    btn.disabled = false;
+    btn.textContent = 'Run Install';
+    if (resultEl) {
+      resultEl.className = 'install-result err';
+      resultEl.textContent = 'Install failed: ' + err;
+    }
+    showToast('Install failed: ' + err, 'err');
   });
+});
+
+function renderHookSelfTest(r) {
+  var area = document.getElementById('hookTestResult');
+  if (!area) return;
+  area.textContent = '';
+
+  (r.results || []).forEach(function(item) {
+    var row = document.createElement('div');
+    row.className = 'hook-test-row ' + (item.ok ? 'ok' : 'err');
+
+    var label = document.createElement('div');
+    label.className = 'hook-test-label';
+    label.textContent = item.label || item.id;
+    row.appendChild(label);
+
+    var detail = document.createElement('div');
+    var parts = [];
+    parts.push(item.logged ? 'logged' : 'not logged');
+    if (item.hook_status) parts.push(item.hook_status);
+    if (item.hits !== null && item.hits !== undefined) parts.push(String(item.hits) + ' hits');
+    if (item.returncode !== null && item.returncode !== undefined) parts.push('exit ' + item.returncode);
+    detail.textContent = item.msg || parts.join(' \u2022 ');
+    row.appendChild(detail);
+
+    area.appendChild(row);
+  });
+
+  if (r.log_path) {
+    var logRow = document.createElement('div');
+    logRow.className = 'setting-hint';
+    logRow.textContent = 'Trace: ' + r.log_path;
+    area.appendChild(logRow);
+  }
+}
+
+document.getElementById('btnHookSelfTest').addEventListener('click', function() {
+  var btn = document.getElementById('btnHookSelfTest');
+  var area = document.getElementById('hookTestResult');
+  btn.disabled = true;
+  btn.textContent = 'Testing...';
+  if (area) {
+    area.textContent = 'Running hook commands...';
+  }
+  callApi('run_hook_self_test').then(function(r) {
+    btn.disabled = false;
+    btn.textContent = 'Test Hooks';
+    renderHookSelfTest(r || { results: [] });
+    showToast((r && r.msg) || 'Hook self-test complete', r && r.ok ? 'ok' : 'warn');
+  }).catch(function(err) {
+    btn.disabled = false;
+    btn.textContent = 'Test Hooks';
+    if (area) {
+      area.textContent = 'Hook self-test failed: ' + err;
+    }
+    showToast('Hook self-test failed: ' + err, 'err');
+  });
+});
+
+// =====================================================
+// DESKTOP APP LAUNCHER
+// =====================================================
+
+function loadDesktopLauncherStatus() {
+  callApi('get_desktop_launcher_status').then(function(r) {
+    var badge = document.getElementById('desktopStatusBadge');
+    var installBtn = document.getElementById('btnInstallDesktop');
+    var uninstallBtn = document.getElementById('btnUninstallDesktop');
+    if (!r || !badge || !installBtn || !uninstallBtn) return;
+
+    if (r.installed) {
+      badge.textContent = 'Installed';
+      badge.style.background = '#22c55e';
+      badge.style.color = '#fff';
+      installBtn.style.display = 'none';
+      uninstallBtn.style.display = 'inline-block';
+    } else {
+      badge.textContent = r.ok === false ? 'Unavailable' : 'Not Installed';
+      badge.style.background = '#333';
+      badge.style.color = '#aaa';
+      installBtn.style.display = r.ok === false ? 'none' : 'inline-block';
+      uninstallBtn.style.display = 'none';
+    }
+  }).catch(function() {});
+}
+
+function installDesktopLauncher() {
+  var btn = document.getElementById('btnInstallDesktop');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Installing...';
+  }
+  callApi('install_desktop_launcher').then(function(r) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Install App Launcher';
+    }
+    if (r && r.ok) {
+      showToast(r.msg || 'App launcher installed', 'ok');
+      loadDesktopLauncherStatus();
+    } else {
+      showToast((r && r.msg) || 'Launcher install failed', 'err');
+    }
+  }).catch(function(err) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Install App Launcher';
+    }
+    showToast('Launcher install failed: ' + err, 'err');
+  });
+}
+
+function uninstallDesktopLauncher() {
+  var btn = document.getElementById('btnUninstallDesktop');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Removing...';
+  }
+  callApi('uninstall_desktop_launcher').then(function(r) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Remove Launcher';
+    }
+    if (r && r.ok) {
+      showToast(r.msg || 'App launcher removed', 'ok');
+      loadDesktopLauncherStatus();
+    } else {
+      showToast((r && r.msg) || 'Launcher removal failed', 'err');
+    }
+  }).catch(function(err) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Remove Launcher';
+    }
+    showToast('Launcher removal failed: ' + err, 'err');
+  });
+}
+
+// Add event listeners for desktop app controls
+document.addEventListener('DOMContentLoaded', function() {
+  var installDesktopBtn = document.getElementById('btnInstallDesktop');
+  var uninstallDesktopBtn = document.getElementById('btnUninstallDesktop');
+
+  if (installDesktopBtn) {
+    installDesktopBtn.addEventListener('click', installDesktopLauncher);
+  }
+  if (uninstallDesktopBtn) {
+    uninstallDesktopBtn.addEventListener('click', uninstallDesktopLauncher);
+  }
 });
 
 // =====================================================
@@ -4133,6 +3851,9 @@ function init() {
   initTabs();
   initAiFilters();
   initSessionFilter();
+  setTimeout(function() {
+    getCollectionUiData(false).catch(function() {});
+  }, 1000);
   // Load data for the default active tab
   var activeTab = document.querySelector('.tab-btn.active');
   var tab = activeTab ? activeTab.getAttribute('data-tab') : 'dashboard';
@@ -4146,6 +3867,7 @@ function init() {
     loadLaunchDirs();
   } else if (tab === 'cli') {
     loadCLIStatus();
+    loadDesktopLauncherStatus();
   }
 }
 
@@ -4154,6 +3876,3 @@ if (window.pywebview && window.pywebview.api) {
 } else {
   window.addEventListener('pywebviewready', init);
 }
-</script>
-</body>
-</html>

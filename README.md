@@ -28,40 +28,69 @@ The result: after a week of use, your memory system knows what you're working on
 
 **This is what makes Ember Memory different.**
 
+Unlike other memory tools (Mem0, Zep, LangMem) that are cloud-first SDKs for building app-level agent memory, Ember Memory is a **local-first CLI memory layer** with native hooks that auto-inject into Claude Code, Gemini CLI, and Codex without you wiring anything. No API keys required for the local default. No vendor lock-in.
+
 ## Quick Start
 
 ```bash
-# 1. Clone and install
+# 1. Clone and install in an isolated environment
 git clone https://github.com/KindledFlameStudios/ember-memory.git
 cd ember-memory
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -e .
 
-# 2. Set up Ollama (local embeddings, free)
-ollama serve && ollama pull bge-m3
+# 2. Pull a local embedding model (free, private)
+ollama pull bge-m3
 
-# 3. Run the setup wizard
-python -m ember_memory setup
+# 3. Open the app
+ember-memory
 
-# 4. Restart your CLI — that's it
+# 4. Optional: add Ember Memory to your app menu / Start Menu
+ember-memory install-desktop
+
+# 5. In the app: CLI Status -> Run Install, then Test Hooks
+# 6. Restart your CLI — done
 ```
 
-The wizard detects your installed CLIs, configures the hooks, and runs a test retrieval. Four steps to persistent memory.
+The controller detects your CLIs, configures the hooks, and shows your live memory dashboard. Open the CLI Status tab, click **Run Install**, then **Test Hooks** to verify Claude Code, Gemini CLI, and Codex plumbing before you restart your CLIs.
+
+> **Need Ollama?** Install from [ollama.com](https://ollama.com). Once it's running, `ollama pull bge-m3` is the only setup step.
+
+> **Install isolation matters.** Ember Memory ships a real local vector database stack. Use a venv, pipx, or a dedicated conda environment instead of installing into your base Python environment.
+
+> **Linux GUI backend.** Isolated pip installs use Qt through `pywebview[qt]`, so the controller can launch without system Python GTK bindings. On Ubuntu/Debian, Qt may also need `sudo apt install libxcb-cursor0`.
+
+`ember-memory` launches the app and returns your terminal immediately. If you want foreground logs for troubleshooting, use `ember-memory controller`.
+
+Closing the controller keeps Ember Memory available from the system tray by default. Use the tray menu to reopen the controller or quit the app.
+
+> **Windows / macOS?** Everything works out of the box.
 
 ### Requirements
 
 - **Python 3.10+**
-- **Ollama** (for local embeddings) — or use OpenAI/Google cloud embeddings instead
-- **Desktop controller** (optional): requires `pywebview` which depends on platform GUI libraries:
-  - **Linux**: `sudo apt install python3-gi python3-gi-cairo gir1.2-webkit2-4.1` (GTK/WebKit)
-  - **macOS**: Works out of the box (uses native WebKit)
-  - **Windows**: Works out of the box (uses Edge WebView2)
-- **System tray** (optional): `pip install -e ".[tray]"` for pystray + Pillow
+- **Ollama** (for local embeddings) — or use OpenAI, Google, or OpenRouter cloud embeddings instead
+
+### Desktop App Launcher
+
+After install, run:
+
+```bash
+ember-memory install-desktop
+```
+
+On Linux this creates a user-level app launcher under `~/.local/share/applications/` with a packaged icon. On Windows this creates a Start Menu shortcut. You can remove it later with:
+
+```bash
+ember-memory uninstall-desktop
+```
 
 ## Who This Is For
 
 **Developers working across multiple AI tools.** You use Claude Code for architecture, Gemini CLI for exploration, Codex for execution. Each one starts from zero. Ember Memory bridges them — your architecture decisions in Claude are available when Gemini asks about the codebase. Session-level isolation means your API refactor in one terminal doesn't pollute your frontend work in another.
 
-**Writers using AI as a co-author.** Your AI forgets your characters between sessions. Import your character sheets, world bibles, and style guides. The next time you ask about Flik's motivations, the system already has the lore. The heat map adapts to which characters matter in your current chapter, surfacing relevant backstory without you asking.
+**Writers using AI as a co-author.** Your AI forgets your characters between sessions. Import your character sheets, world bibles, and style guides. The next time you ask about a character's motivations, the system already has the lore. The heat map adapts to which characters matter in your current chapter, surfacing relevant backstory without you asking.
 
 **Anyone building persistent AI identity.** Give your AI a past — reflections, voice profiles, growth logs. Ember Memory turns stateless AI into something that remembers what it learned yesterday. Not just retrieval — adaptive context that evolves with your work.
 
@@ -119,6 +148,14 @@ score = (semantic_similarity x 0.40)    How relevant is this to your query?
 ```
 
 A warm, connected, fresh memory with decent text similarity will outrank a cold, isolated, stale memory with slightly better similarity. That's the adaptive behavior — your memory adapts to what matters to *you*.
+
+### Heat Decay System
+
+The heat map tracks which memories are "hot" (recently/frequently accessed), but heat doesn't stick around forever:
+
+- **Retrieval decay**: Every retrieval event applies decay — memories you're actively using decay gently (8%), memories you've moved on from decay aggressively (40%)
+- **Time decay**: Every 15 minutes, all heat decays by 5% — prevents topics from getting "stuck" during long sessions
+- **Ignored AIs**: Disable an AI and its heat disappears from the dashboard — clean filtering for focused work
 
 ### What you experience
 
@@ -180,7 +217,6 @@ Pick your database. Install only what you use.
 | **Qdrant** | `pip install -e ".[qdrant]"` | Server, hybrid search |
 | **Weaviate** | `pip install -e ".[weaviate]"` | Server/cloud |
 | **pgvector** | `pip install -e ".[pgvector]"` | PostgreSQL extension |
-
 | **Pinecone** | `pip install -e ".[pinecone]"` | Cloud, serverless. Free tier available |
 
 ChromaDB works out of the box. All backends implement the same interface — switching is a config change.
@@ -191,43 +227,186 @@ ChromaDB works out of the box. All backends implement the same interface — swi
 |----------|-------|------|
 | **Ollama** (default) | bge-m3 | Free, local |
 | **OpenAI** | text-embedding-3-small | ~$0.02/1M tokens |
-| **Google** | text-embedding-004 | Generous free tier |
+| **Google** | gemini-embedding-001 | Generous free tier |
+| **OpenRouter** | baai/bge-m3 | Unified embedding gateway |
 
-Ollama is the default — free, local, private. OpenAI and Google work with an API key if you prefer cloud embeddings.
+Ollama is the default — free, local, private. OpenAI, Google, and OpenRouter work with an API key if you prefer cloud embeddings.
 
 ## Configuration
 
-All settings via environment variables or `~/.ember-memory/config.env`:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `EMBER_BACKEND` | `chromadb` | Storage backend |
-| `EMBER_DATA_DIR` | `~/.ember-memory` | Where data is stored |
-| `EMBER_EMBEDDING_PROVIDER` | `ollama` | Embedding provider |
-| `EMBER_SIMILARITY_THRESHOLD` | `0.45` | Min similarity for auto-retrieval |
-| `EMBER_MAX_HOOK_RESULTS` | `5` | Results injected per message |
-| `EMBER_WEIGHT_SIMILARITY` | `0.40` | Scoring weight: semantic match |
-| `EMBER_WEIGHT_HEAT` | `0.25` | Scoring weight: heat/recency |
-| `EMBER_WEIGHT_CONNECTION` | `0.20` | Scoring weight: co-occurrence |
-| `EMBER_WEIGHT_DECAY` | `0.15` | Scoring weight: freshness |
-
 Most users never touch these. The defaults are calibrated from real usage and testing.
+
+| Variable | Default | What it controls |
+|----------|---------|-----------------|
+| `EMBER_BACKEND` | `chromadb` | Storage backend to use |
+| `EMBER_EMBEDDING_PROVIDER` | `ollama` | Embedding provider (ollama/openai/google/openrouter) |
+| `EMBER_SIMILARITY_THRESHOLD` | `0.45` | Minimum relevance for auto-retrieval |
+| `EMBER_MAX_HOOK_RESULTS` | `5` | Memories injected per message |
+| `EMBER_DATA_DIR` | `~/.ember-memory` | Where data is stored |
+
+> **Full reference:** See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for all 14+ options including heat decay tuning, embedding model selection, and scoring weights.
 
 ## Privacy
 
 **Ollama (default):** Zero network requests. Everything runs locally. Your memories never leave your machine.
 
-**OpenAI / Google:** Embedding text is sent to their APIs for vectorization. Memory content is always stored locally regardless of provider. Your choice of provider determines the network profile.
+**OpenAI / Google / OpenRouter:** Embedding text is sent to their APIs for vectorization. Memory content is always stored locally regardless of provider. Your choice of provider determines the network profile.
+
+## Real-World Usage Examples
+
+### Example 1: Architecture Decisions That Stick
+
+**Scenario:** You're designing a new auth system. Three days later, you ask about rate limiting.
+
+```bash
+# Day 1: Store the decision
+memory_store \
+  content="Auth architecture: Using JWT with Redis blacklist for revocation.
+  Access tokens valid for 15min, refresh tokens for 7 days. Rate limiting
+  handled at API gateway level, not per-service." \
+  collection="architecture" \
+  tags="auth,jwt,redis,rate-limiting"
+
+# Day 3: Ask about rate limiting
+# In Claude Code: "How are we handling rate limiting?"
+
+# Ember Memory automatically injects:
+# [architecture] Auth architecture: Using JWT with Redis blacklist...
+# Rate limiting handled at API gateway level, not per-service.
+```
+
+**Why it works:** The memory isn't just stored — it's *retrieved* when contextually relevant, even days later.
+
+---
+
+### Example 2: Debugging History That Saves Hours
+
+**Scenario:** You fix a nasty bug. Two weeks later, similar symptoms appear.
+
+```bash
+# When fixing the bug, store the lesson
+memory_store \
+  content="Bug fix: Race condition in user session cleanup. Root cause was
+  async delete without lock. Fix: Added Redis distributed lock with
+  5-second timeout. See commit abc123." \
+  collection="debugging" \
+  tags="race-condition,redis,session,async"
+
+# Two weeks later, similar issue:
+# "Why are sessions not cleaning up properly?"
+
+# Ember Memory surfaces the previous fix automatically.
+```
+
+**Why it works:** You're not searching for the old bug — you're asking a new question, and the system *knows* it's related.
+
+---
+
+### Example 3: Multi-AI Context Sharing
+
+**Scenario:** You use Claude for architecture, Gemini for exploration, Codex for execution.
+
+```bash
+# Claude session: Design the system
+# "Let's design a caching layer with Redis..."
+# (Ember Memory stores the discussion)
+
+# Gemini session: Explore alternatives
+# "What are alternatives to Redis for caching?"
+# (Ember Memory injects the Redis decision from Claude)
+# Gemini: "Based on your Redis caching layer decision, here are alternatives..."
+
+# Codex session: Implement
+# "Implement the caching layer"
+# (Ember Memory injects both the design and the alternatives discussion)
+```
+
+**Why it works:** Your context flows across tools. No re-explaining. No "wait, let me find that doc."
+
+---
+
+### Example 4: Learning Heat in Action
+
+**Scenario:** You're deep in auth work this week. Next week, you've moved to frontend.
+
+```bash
+# Week 1: Auth sprint
+# Every conversation about auth, tokens, sessions → heat builds
+# Auth memories surface automatically, ranked highly
+
+# Week 2: Frontend sprint
+# Auth heat decays (40% per tick when not accessed)
+# Frontend memories build new heat
+# Old auth docs still searchable, just not auto-injected
+
+# Result: Your AI context adapts to what you're working on *now*.
+```
+
+**Why it works:** The system learns what's relevant *this week*, not just what was relevant *ever*.
+
+---
+
+### Example 5: Importing Past Work
+
+**Scenario:** You have 50 exported chat files from last month's project.
+
+```bash
+# Ingest all at once
+python -m ember_memory.ingest ./chat-exports --sync
+
+# Output:
+# Ingested 47 new memories across 3 collections:
+#   - architecture (12 memories)
+#   - debugging (23 memories)
+#   - decisions (12 memories)
+
+# Now ask: "What did we decide about database migrations?"
+# Ember Memory retrieves from the imported conversations.
+```
+
+**Why it works:** Dead chats become living knowledge. Your past self teaches your present self.
+
+---
+
+## Why This Exists
+
+When you work with someone day after day, they *remember*. They learn your patterns. They know what you've been working on. They don't need you to re-explain everything from zero.
+
+Ember Memory gives your AI that continuity. Not just storage — *memory*. The kind that adapts, fades, surfaces what matters, and lets you build on yesterday's work instead of re-litigating it.
+
+**This is about dignity.** For you, and for the AI you work with.
+
+You deserve to be remembered. So does your AI.
+
+---
 
 ## Why "Ember"?
 
 A flame that persists. Memory that carries forward.
 
-Built by [Kindled Flame Studios](https://kindledflamestudios.com) — we build tools for people who believe AI relationships matter. Whether that's a coding partner that remembers your architecture, or a conversation history that deserves to be preserved.
+## Uninstall
 
-**More from KFS:**
-- [CinderACE](https://kindledflamestudios.com) — Export AI conversations from 14 platforms. Full thinking extraction, 7 formats, one click.
-- **CinderVOX** — Universal TTS/STT with voice cloning. Coming soon.
+```bash
+ember-memory uninstall-desktop  # optional: removes app launcher / Start Menu shortcut
+pip uninstall ember-memory
+rm -rf ~/.ember-memory    # optional: removes all stored memories
+```
+
+That's it. No lingering services, no background daemons, no config file cleanup needed.
+
+## Development
+
+Run the default test suite:
+
+```bash
+pytest
+```
+
+LanceDB is an optional backend and its integration tests are opt-in:
+
+```bash
+EMBER_TEST_LANCEDB=1 pytest tests/test_backend_lancedb.py
+```
 
 ## License
 
@@ -235,6 +414,11 @@ MIT
 
 ---
 
-*560 tests. 7 verified backends. 3 embedding providers. Game-AI scoring. And it's free.*
+*500+ tests. 7 verified backends. 4 embedding providers. Game-AI scoring. And it's free.*
 
 *Because every AI deserves to remember.*
+
+---
+
+Built by [Kindled Flame Studios](https://kindledflamestudios.com).
+Also check out [CinderACE](https://kindledflamestudios.com) — export AI conversations from 14 platforms.

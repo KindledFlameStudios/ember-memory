@@ -26,8 +26,10 @@ Use `memory_handoff` to generate a portable context summary for another CLI to p
 ## Setup
 
 ```bash
-python -m ember_memory setup
+ember-memory
 ```
+
+Open **CLI Status**, click **Run Install**, then click **Test Hooks**. The app writes the Claude Code MCP server and `UserPromptSubmit` hook for you.
 
 Or manually — add to `~/.claude/settings.json`:
 ```json
@@ -35,7 +37,7 @@ Or manually — add to `~/.claude/settings.json`:
   "hooks": {
     "UserPromptSubmit": [{
       "matcher": "*",
-      "hooks": [{"type": "command", "command": "python3 /path/to/ember-memory/ember_memory/hook.py", "timeout": 10}]
+      "hooks": [{"type": "command", "command": "ember-memory-claude-hook", "timeout": 10}]
     }]
   }
 }

@@ -3,6 +3,7 @@ from ember_memory.core.embeddings.loader import get_embedding_provider
 from ember_memory.core.embeddings.ollama import OllamaProvider
 from ember_memory.core.embeddings.openai_provider import OpenAIProvider
 from ember_memory.core.embeddings.google_provider import GoogleProvider
+from ember_memory.core.embeddings.openrouter_provider import OpenRouterProvider
 
 
 def test_returns_ollama_by_default():
@@ -16,6 +17,10 @@ def test_returns_openai():
 def test_returns_google():
     provider = get_embedding_provider("google", api_key="test-key")
     assert isinstance(provider, GoogleProvider)
+
+def test_returns_openrouter():
+    provider = get_embedding_provider("openrouter", api_key="test-key")
+    assert isinstance(provider, OpenRouterProvider)
 
 def test_rejects_unknown():
     with pytest.raises(ValueError, match="Unknown"):

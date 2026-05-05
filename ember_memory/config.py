@@ -3,14 +3,14 @@ Configuration management for Ember Memory.
 
 Resolution order (per setting):
   1. Environment variable   — allows runtime overrides / CI
-  2. config.env file        — wizard-managed, lives at ~/.ember-memory/config.env
+  2. config.env file        — controller-managed, lives at ~/.ember-memory/config.env
   3. Hardcoded default      — sensible out-of-box values
 
 The config file lives at a FIXED location (~/.ember-memory/config.env) regardless
 of where the actual data directory is. This avoids the chicken-and-egg problem:
 config.env tells us where the data lives, so it can't live inside the data dir.
 
-The wizard app writes config.env. The MCP server and hook both read it here.
+The controller app writes config.env. The MCP server and hook both read it here.
 """
 
 import os
@@ -73,12 +73,15 @@ SIMILARITY_THRESHOLD = float(_get("EMBER_SIMILARITY_THRESHOLD", "0.45"))
 MAX_HOOK_RESULTS = int(_get("EMBER_MAX_HOOK_RESULTS", "5"))
 MAX_PREVIEW_CHARS = int(_get("EMBER_MAX_PREVIEW_CHARS", "800"))
 HOOK_DEBUG = _get("EMBER_HOOK_DEBUG", "").lower() in ("1", "true", "yes")
+AUTO_QUERY = _get("EMBER_AUTO_QUERY", "true").lower() in ("1", "true", "yes")
 
 # -- Embedding (cloud providers) --
 OPENAI_API_KEY = _get("EMBER_OPENAI_API_KEY", "")
 OPENAI_EMBEDDING_MODEL = _get("EMBER_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 GOOGLE_API_KEY = _get("EMBER_GOOGLE_API_KEY", "")
-GOOGLE_EMBEDDING_MODEL = _get("EMBER_GOOGLE_EMBEDDING_MODEL", "text-embedding-004")
+GOOGLE_EMBEDDING_MODEL = _get("EMBER_GOOGLE_EMBEDDING_MODEL", "gemini-embedding-001")
+OPENROUTER_API_KEY = _get("EMBER_OPENROUTER_API_KEY", "")
+OPENROUTER_EMBEDDING_MODEL = _get("EMBER_OPENROUTER_EMBEDDING_MODEL", "baai/bge-m3")
 
 # -- Engine weights --
 WEIGHT_SIMILARITY = float(_get("EMBER_WEIGHT_SIMILARITY", "0.40"))

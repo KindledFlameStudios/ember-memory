@@ -9,6 +9,15 @@ build/
 *.egg
 .env
 .env.*
+config.env
+.ember-memory/
+*.db
+*.sqlite
+*.sqlite3
+*.duckdb
+*.lance
+chroma/
+chromadb/
 .claude/
 .cline/
 *.log
@@ -20,6 +29,7 @@ venv/
 FORGE.md
 docs/superpowers/
 docs/research/
+docs/Project Review and Improvement Plan.md
 **/*.bak
 **/*.tmp
 pushgit.sh
