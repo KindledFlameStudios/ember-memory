@@ -3,7 +3,7 @@ Tests for ember_memory.core.embeddings.google_provider — GoogleProvider.
 
 Verifies:
 - Implements the EmbeddingProvider interface
-- Returns correct dimension (768 for text-embedding-004)
+- Returns correct dimension (3072 for gemini-embedding-001)
 - embed() correctly parses a single-embedding API response
 - embed_batch() correctly parses a batch API response
 - Empty API key raises ValueError at construction
@@ -37,10 +37,10 @@ class TestGoogleProviderInterface:
 # ---------------------------------------------------------------------------
 
 class TestGoogleProviderDimension:
-    def test_dimension_768(self):
-        """Default model (text-embedding-004) must report 768 dimensions."""
+    def test_dimension_3072(self):
+        """Default model (gemini-embedding-001) must report 3072 dimensions."""
         provider = GoogleProvider(api_key=_FAKE_KEY)
-        assert provider.dimension() == 768
+        assert provider.dimension() == 3072
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ class TestGoogleProviderEmbed:
         call_kwargs = mock_post.call_args[1]
         body = call_kwargs["json"]
         assert body["content"]["parts"][0]["text"] == "test text"
-        assert "models/text-embedding-004" in body["model"]
+        assert "models/gemini-embedding-001" in body["model"]
 
 
 # ---------------------------------------------------------------------------

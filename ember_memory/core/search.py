@@ -15,6 +15,7 @@ from ember_memory import config
 from ember_memory.core.namespaces import get_visible_collections
 from ember_memory.core.backends.base import MemoryBackend
 from ember_memory.core.embeddings.base import EmbeddingProvider
+from ember_memory.core.engine.scopes import get_all_cli_ids
 
 logger = logging.getLogger("ember-memory.search")
 
@@ -114,17 +115,27 @@ def retrieve(
         logger.warning("retrieve() called without backend or embedder")
         return []
 
+    engine = _get_engine(engine_db_path) if engine_db_path else None
+    engine_state = heat_map = connections = None
+    extra_ai_ids: list[str] = []
+    if engine is not None:
+        engine_state, heat_map, connections = engine
+        extra_ai_ids = get_all_cli_ids(engine_state)
+    engine_paused_for_ai = bool(ai_id and heat_map is not None and heat_map.is_ignored(ai_id))
+
     # 1. Get visible collections for this AI
     all_collections = backend.list_collections()
     all_names = [c["name"] for c in all_collections if c.get("count", 0) > 0]
     # "open" namespace mode bypasses AI filtering — all collections visible
     effective_ai_id = "*" if config.NAMESPACE_MODE == "open" else ai_id
-    visible = get_visible_collections(all_names, ai_id=effective_ai_id)
+    visible = get_visible_collections(all_names, ai_id=effective_ai_id, extra_ai_ids=extra_ai_ids)
 
     if engine_db_path and visible:
-        engine = _get_engine(engine_db_path)
-        if engine is not None:
-            engine_state, _, _ = engine
+        if engine_state is not None and heat_map is not None:
+            # One-time cleanup: cool heat for all currently disabled AIs
+            # This fixes stale heat from AIs disabled before the cooling feature existed
+            heat_map.cool_ignored_heat()
+
             visible = [
                 name
                 for name in visible
@@ -135,7 +146,6 @@ def retrieve(
     effective_workspace = workspace
     if not effective_workspace and cwd and engine_db_path:
         # Auto-detect workspace from working directory
-        engine = _get_engine(engine_db_path)
         if engine:
             state = engine[0]
             ws_config = state.get_workspace_config()
@@ -146,7 +156,6 @@ def retrieve(
                     break
 
     if effective_workspace and engine_db_path:
-        engine = _get_engine(engine_db_path)
         if engine:
             state = engine[0]
             ws_config = state.get_workspace_config()
@@ -277,10 +286,8 @@ def retrieve(
             all_results = reordered
 
     # 5. Engine re-scoring (optional — only when engine_db_path is provided)
-    if engine_db_path and all_results:
-        engine = _get_engine(engine_db_path)
-        if engine is not None:
-            engine_state, heat_map, connections = engine
+    if engine_db_path and all_results and not engine_paused_for_ai:
+        if engine_state is not None and heat_map is not None and connections is not None:
             try:
                 from ember_memory.core.engine.scoring import composite_score, compute_decay
 
@@ -321,10 +328,9 @@ def retrieve(
 
     # Apply user feedback adjustments after Engine scoring and before the
     # final sort/dedup pass so explicit ratings can influence future ranking.
-    if engine_db_path and all_results:
-        engine = _get_engine(engine_db_path)
-        if engine is not None:
-            state = engine[0]
+    if engine_db_path and all_results and not engine_paused_for_ai:
+        if engine_state is not None:
+            state = engine_state
             for result in all_results:
                 try:
                     feedback = float(state.get_config(f"feedback_{result.id}", "0"))
@@ -359,10 +365,9 @@ def retrieve(
 
     # Inject pinned memories that match the query so they always surface when
     # the user mentions the configured trigger topic.
-    if engine_db_path:
-        engine = _get_engine(engine_db_path)
-        if engine is not None:
-            state = engine[0]
+    if engine_db_path and not engine_paused_for_ai:
+        if engine_state is not None:
+            state = engine_state
             prompt_lower = prompt.lower()
             try:
                 pins = json.loads(state.get_config("pinned_memories", "[]"))
@@ -402,10 +407,8 @@ def retrieve(
                 final_results = pinned_results + final_results
 
     # 8. Update Engine state after retrieval (records patterns for future boosts)
-    if engine_db_path and final_results:
-        engine = _get_engine(engine_db_path)
-        if engine is not None:
-            engine_state, heat_map, connections = engine
+    if engine_db_path and final_results and not engine_paused_for_ai:
+        if engine_state is not None and heat_map is not None and connections is not None:
             try:
                 # Record access for every returned result
                 for result in final_results:

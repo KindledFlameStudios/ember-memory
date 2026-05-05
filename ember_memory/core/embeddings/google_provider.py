@@ -4,14 +4,18 @@ import requests
 from ember_memory.core.embeddings.base import EmbeddingProvider
 
 _MODEL_DIMS = {
-    "text-embedding-004": 768,
+    "gemini-embedding-2-preview": 3072,
+    "gemini-embedding-001": 3072,
+    "text-embedding-005": 768,
+    "text-multilingual-embedding-002": 768,
+    "text-embedding-004": 768,  # still available but deprecated
 }
 
 
 class GoogleProvider(EmbeddingProvider):
     """Embed via Google's Gemini embedding API."""
 
-    def __init__(self, api_key: str, model: str = "text-embedding-004"):
+    def __init__(self, api_key: str, model: str = "gemini-embedding-001"):
         if not api_key:
             raise ValueError("Google API key is required")
         self._api_key = api_key

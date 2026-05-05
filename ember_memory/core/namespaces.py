@@ -50,7 +50,19 @@ def resolve_collection_name(topic: str, scope: str = "shared") -> str:
     return f"{scope}{NS_SEP}{topic}"
 
 
-def parse_collection_name(name: str) -> tuple[str, str]:
+def _recognized_ai_ids(extra_ai_ids: Optional[list[str] | tuple[str, ...] | set[str]] = None) -> set[str]:
+    recognized = set(KNOWN_AI_IDS)
+    for ai_id in extra_ai_ids or ():
+        normalized = str(ai_id or "").strip().lower()
+        if normalized:
+            recognized.add(normalized)
+    return recognized
+
+
+def parse_collection_name(
+    name: str,
+    extra_ai_ids: Optional[list[str] | tuple[str, ...] | set[str]] = None,
+) -> tuple[str, str]:
     """Decompose a collection name into its (namespace, topic) parts.
 
     Rules:
@@ -84,7 +96,9 @@ def parse_collection_name(name: str) -> tuple[str, str]:
 
     prefix, topic = name.split(NS_SEP, 1)
 
-    if prefix == SHARED_NAMESPACE or prefix in KNOWN_AI_IDS:
+    recognized = _recognized_ai_ids(extra_ai_ids)
+
+    if prefix == SHARED_NAMESPACE or prefix in recognized:
         namespace = SHARED_NAMESPACE if prefix == SHARED_NAMESPACE else prefix
         return (namespace, topic)
 
@@ -95,6 +109,7 @@ def parse_collection_name(name: str) -> tuple[str, str]:
 def get_visible_collections(
     all_collections: list[str],
     ai_id: Optional[str] = None,
+    extra_ai_ids: Optional[list[str] | tuple[str, ...] | set[str]] = None,
 ) -> list[str]:
     """Filter a collection list to those visible to a given AI.
 
@@ -129,7 +144,7 @@ def get_visible_collections(
     visible: list[str] = []
 
     for collection in all_collections:
-        namespace, _topic = parse_collection_name(collection)
+        namespace, _topic = parse_collection_name(collection, extra_ai_ids=extra_ai_ids)
 
         if namespace == SHARED_NAMESPACE:
             # Shared collections are always included.

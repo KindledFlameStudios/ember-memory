@@ -15,7 +15,7 @@ from ember_memory.core.embeddings.openai_provider import OpenAIProvider
 # Helpers
 # ---------------------------------------------------------------------------
 
-FAKE_KEY = "sk-test-1234567890"
+FAKE_KEY = "test-openai-key"
 SMALL_MODEL = "text-embedding-3-small"
 LARGE_MODEL = "text-embedding-3-large"
 

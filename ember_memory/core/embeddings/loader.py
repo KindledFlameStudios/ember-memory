@@ -26,8 +26,14 @@ def get_embedding_provider(provider: str | None = None, **kwargs) -> EmbeddingPr
             api_key=kwargs.get("api_key", config.GOOGLE_API_KEY),
             model=kwargs.get("model", config.GOOGLE_EMBEDDING_MODEL),
         )
+    elif provider == "openrouter":
+        from ember_memory.core.embeddings.openrouter_provider import OpenRouterProvider
+        return OpenRouterProvider(
+            api_key=kwargs.get("api_key", config.OPENROUTER_API_KEY),
+            model=kwargs.get("model", config.OPENROUTER_EMBEDDING_MODEL),
+        )
     else:
         raise ValueError(
             f"Unknown embedding provider: '{provider}'. "
-            f"Available: ollama, openai, google"
+            f"Available: ollama, openai, google, openrouter"
         )

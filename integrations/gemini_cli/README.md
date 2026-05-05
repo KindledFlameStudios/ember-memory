@@ -17,6 +17,16 @@ Generate a hand-off packet in Claude Code with `memory_handoff`, then pick it up
 
 ## Setup
 
+Recommended:
+
+```bash
+ember-memory
+```
+
+Open **CLI Status**, click **Run Install**, then click **Test Hooks**.
+
+Manual setup:
+
 Add to `~/.gemini/settings.json`:
 
 ```json
@@ -27,7 +37,7 @@ Add to `~/.gemini/settings.json`:
       "hooks": [{
         "name": "ember-memory",
         "type": "command",
-        "command": "python3 /path/to/ember-memory/integrations/gemini_cli/hook.py",
+        "command": "ember-memory-gemini-hook",
         "timeout": 10000
       }]
     }]
@@ -36,6 +46,7 @@ Add to `~/.gemini/settings.json`:
     "ember-memory": {
       "command": "python3",
       "args": ["-m", "ember_memory.server"],
+      "env": {"EMBER_AI_ID": "gemini"},
       "timeout": 30000
     }
   }

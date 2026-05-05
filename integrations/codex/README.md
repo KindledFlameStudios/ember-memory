@@ -26,12 +26,22 @@ Decisions stored in Claude Code? Architecture docs from Gemini? They're here in 
 
 ## Setup
 
+Recommended:
+
+```bash
+ember-memory
+```
+
+Open **CLI Status**, click **Run Install**, then click **Test Hooks**.
+
+Manual setup:
+
 Add to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.ember-memory]
 command = "python3"
-args = ["-c", "import sys; sys.path.insert(0, '/path/to/ember-memory'); from ember_memory.server import mcp; mcp.run(transport='stdio')"]
+args = ["-m", "ember_memory.server"]
 startup_timeout_sec = 15
 tool_timeout_sec = 30
 
@@ -53,7 +63,7 @@ Add `~/.codex/hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /path/to/ember-memory/integrations/codex/hook.py",
+            "command": "ember-memory-codex-hook",
             "timeout": 10,
             "statusMessage": "Retrieving Ember Memory context"
           }

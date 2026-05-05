@@ -12,19 +12,18 @@ import os
 import re
 import logging
 from datetime import datetime, timezone
+import traceback
 
 # Ensure the ember_memory package is importable when run as a standalone script
 _package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _package_root not in sys.path:
     sys.path.insert(0, _package_root)
 
-# Suppress Chroma telemetry noise on stderr
+# Hooks must keep stdout/stderr quiet; stdout is reserved for injected context.
+logging.disable(logging.CRITICAL)
 logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
 
 from ember_memory import config
-from ember_memory.core.search import retrieve
-from ember_memory.core.embeddings.loader import get_embedding_provider
-from ember_memory.core.backends.loader import get_backend_v2
 
 LOG_FILE = os.path.join(config.DATA_DIR, "hook_debug.log")
 ACTIVITY_LOG = os.path.join(config.DATA_DIR, "activity.jsonl")
@@ -44,8 +43,31 @@ def _stable_session_id():
 
 SESSION_ID = _stable_session_id()
 
-# AI namespace — controls which collections are visible during retrieval
-AI_ID = os.environ.get("EMBER_AI_ID", "claude")
+# AI namespace — controls which collections are visible during retrieval.
+# Priority: EMBER_AI_ID, then optional EMBER_AI_ID_MAP, then Claude Code default.
+def _mapped_ai_id(identity):
+    mapping = os.environ.get("EMBER_AI_ID_MAP", "")
+    identity = str(identity or "").strip()
+    if not mapping or not identity:
+        return ""
+
+    for item in mapping.split(","):
+        if "=" in item:
+            source, target = item.split("=", 1)
+        elif ":" in item:
+            source, target = item.split(":", 1)
+        else:
+            continue
+        if source.strip() == identity:
+            return target.strip()
+    return ""
+
+
+AI_ID = (
+    os.environ.get("EMBER_AI_ID")
+    or _mapped_ai_id(os.environ.get("FORGE_IDENTITY", ""))
+    or "claude"
+)
 WORKSPACE = os.environ.get("EMBER_WORKSPACE", "")
 
 
@@ -54,6 +76,46 @@ def debug_log(msg):
         return
     with open(LOG_FILE, "a") as f:
         f.write(f"[{datetime.now().isoformat()}] {msg}\n")
+
+
+def _log_hook_error(exc):
+    """Write hook failures locally without polluting stdout/stderr."""
+    try:
+        os.makedirs(config.DATA_DIR, exist_ok=True)
+        path = os.path.join(config.DATA_DIR, "hook_errors.log")
+        with open(path, "a") as f:
+            f.write("[claude] hook failed\n")
+            f.write("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
+            f.write("\n")
+    except Exception:
+        pass
+
+
+def _log_hook_event(status, prompt="", hits=None, elapsed_ms=None, input_keys=None):
+    """Write local hook telemetry without polluting stdout/stderr."""
+    try:
+        os.makedirs(config.DATA_DIR, exist_ok=True)
+        entry = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "hook": "claude",
+            "ai_id": AI_ID,
+            "forge_identity": os.environ.get("FORGE_IDENTITY", ""),
+            "status": status,
+            "prompt_len": len(prompt or ""),
+            "pid": os.getpid(),
+            "ppid": os.getppid(),
+        }
+        if hits is not None:
+            entry["hits"] = hits
+        if elapsed_ms is not None:
+            entry["elapsed_ms"] = elapsed_ms
+        if input_keys:
+            entry["input_keys"] = sorted(str(key) for key in input_keys)
+        path = os.path.join(config.DATA_DIR, "hook_invocations.jsonl")
+        with open(path, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass
 
 
 LAST_RETRIEVAL = os.path.join(config.DATA_DIR, "last_retrieval.json")
@@ -126,6 +188,7 @@ def main():
         hook_input = json.loads(raw)
     except (json.JSONDecodeError, EOFError) as e:
         debug_log(f"JSON parse error: {e}")
+        _log_hook_event("parse_error", elapsed_ms=int((time.monotonic() - t_start) * 1000))
         sys.exit(0)
 
     # Claude Code sends "prompt", not "user_prompt" (docs are wrong)
@@ -133,6 +196,22 @@ def main():
     debug_log(f"Prompt: {user_prompt[:200]}")
     if not user_prompt or len(user_prompt.strip()) < 10:
         debug_log("Prompt too short, skipping")
+        _log_hook_event(
+            "empty_prompt",
+            prompt=user_prompt,
+            elapsed_ms=int((time.monotonic() - t_start) * 1000),
+            input_keys=hook_input.keys(),
+        )
+        sys.exit(0)
+
+    if not config.AUTO_QUERY:
+        debug_log("Auto-query disabled, skipping")
+        _log_hook_event(
+            "auto_query_off",
+            prompt=user_prompt,
+            elapsed_ms=int((time.monotonic() - t_start) * 1000),
+            input_keys=hook_input.keys(),
+        )
         sys.exit(0)
 
     # Strip IDE tags from the prompt for cleaner search
@@ -143,11 +222,22 @@ def main():
     debug_log(f"Clean prompt: {clean_prompt[:200]}")
 
     try:
+        from ember_memory.core.search import retrieve
+        from ember_memory.core.embeddings.loader import get_embedding_provider
+        from ember_memory.core.backends.loader import get_backend_v2
+
         embedder = get_embedding_provider()
         backend = get_backend_v2()
         debug_log("Backend and embedder initialized")
     except Exception as e:
         debug_log(f"INIT ERROR: {e}")
+        _log_hook_error(e)
+        _log_hook_event(
+            "error",
+            prompt=clean_prompt,
+            elapsed_ms=int((time.monotonic() - t_start) * 1000),
+            input_keys=hook_input.keys(),
+        )
         sys.exit(0)
 
     engine_db_path = os.path.join(config.DATA_DIR, "engine", "engine.db")
@@ -166,14 +256,43 @@ def main():
             similarity_threshold=config.SIMILARITY_THRESHOLD,
             engine_db_path=engine_db_path,
         )
+        fallback_used = False
+        if not results and config.SIMILARITY_THRESHOLD > 0.45:
+            results = retrieve(
+                prompt=clean_prompt,
+                ai_id=AI_ID,
+                workspace=WORKSPACE,
+                cwd=os.getcwd(),
+                session_id=SESSION_ID,
+                backend=backend,
+                embedder=embedder,
+                limit=config.MAX_HOOK_RESULTS,
+                similarity_threshold=0.45,
+                engine_db_path=engine_db_path,
+            )
+            fallback_used = bool(results)
         debug_log(f"retrieve() returned {len(results)} results")
     except Exception as e:
         debug_log(f"RETRIEVE ERROR: {e}")
+        _log_hook_error(e)
+        _log_hook_event(
+            "error",
+            prompt=clean_prompt,
+            elapsed_ms=int((time.monotonic() - t_start) * 1000),
+            input_keys=hook_input.keys(),
+        )
         sys.exit(0)
 
+    elapsed_ms = int((time.monotonic() - t_start) * 1000)
     if not results:
-        elapsed_ms = int((time.monotonic() - t_start) * 1000)
         write_activity(clean_prompt, [], elapsed_ms)
+        _log_hook_event(
+            "no_results",
+            prompt=clean_prompt,
+            hits=0,
+            elapsed_ms=elapsed_ms,
+            input_keys=hook_input.keys(),
+        )
         debug_log("No results above threshold, exiting")
         sys.exit(0)
 
@@ -196,8 +315,14 @@ def main():
     tag_name = config.CONTEXT_TAG
     memory_text = f"<{tag_name}>\nRelevant memories retrieved automatically ({len(results)} results):\n\n{memory_context}\n</{tag_name}>"
 
-    elapsed_ms = int((time.monotonic() - t_start) * 1000)
     write_activity(clean_prompt, results, elapsed_ms)
+    _log_hook_event(
+        "fallback_results" if fallback_used else "results",
+        prompt=clean_prompt,
+        hits=len(results),
+        elapsed_ms=elapsed_ms,
+        input_keys=hook_input.keys(),
+    )
     debug_log(f"Outputting {len(results)} results ({elapsed_ms}ms)")
 
     # Plain text on stdout — Claude Code injects exit-0 stdout into context

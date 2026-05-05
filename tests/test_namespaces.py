@@ -88,6 +88,12 @@ class TestParseCollectionName:
     def test_shared_namespace_constant(self):
         assert SHARED_NAMESPACE == "shared"
 
+    def test_custom_ai_prefix_respected_when_registered(self):
+        assert parse_collection_name("openclaw--prefs", extra_ai_ids={"openclaw"}) == (
+            "openclaw",
+            "prefs",
+        )
+
 
 # ---------------------------------------------------------------------------
 # get_visible_collections
@@ -151,6 +157,14 @@ class TestGetVisibleCollections:
         # An AI not in KNOWN_AI_IDS still gets shared collections.
         result = get_visible_collections(self.MIXED, ai_id="newbot")
         assert result == ["notes", "shared--facts", "unknown--stuff"]
+
+    def test_custom_ai_collections_stay_private_when_registered(self):
+        mixed = ["notes", "openclaw--prefs", "codex--tasks"]
+        assert get_visible_collections(mixed, ai_id="claude", extra_ai_ids={"openclaw"}) == ["notes"]
+        assert get_visible_collections(mixed, ai_id="openclaw", extra_ai_ids={"openclaw"}) == [
+            "notes",
+            "openclaw--prefs",
+        ]
 
     def test_order_preserved(self):
         ordered = ["shared--z", "claude--a", "notes", "gemini--b"]

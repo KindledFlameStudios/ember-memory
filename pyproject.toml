@@ -8,7 +8,7 @@ version = "2.0.0"
 description = "Persistent memory for AI coding CLIs with adaptive retrieval."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
   { name = "Kindled Flame Studios", email = "support@kindledflamestudios.com" }
 ]
@@ -16,7 +16,10 @@ dependencies = [
   "chromadb>=0.5.0",
   "mcp[cli]>=1.0.0",
   "requests>=2.31.0",
-  "pywebview>=5.0",
+  "pywebview>=5.0; sys_platform != 'linux'",
+  "pywebview[qt]>=5.0; sys_platform == 'linux'",
+  "pystray>=0.19.5",
+  "Pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]
@@ -39,22 +42,28 @@ pinecone = [
 pgvector = [
   "psycopg2-binary>=2.9.9",
 ]
-tray = [
-  "pystray>=0.19.5",
-  "Pillow>=10.0.0",
-]
 dev = [
   "pytest>=8.0.0",
 ]
 
 [project.scripts]
 ember-memory = "ember_memory.__main__:main"
+ember-memory-claude-hook = "ember_memory.hook:main"
+ember-memory-codex-hook = "ember_memory.codex_hook:main"
+ember-memory-gemini-hook = "ember_memory.gemini_hook:main"
+
+[project.gui-scripts]
+ember-memory-controller = "ember_memory.__main__:launch_controller"
 
 [tool.setuptools]
-include-package-data = false
+include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["ember_memory*"]
+include = ["ember_memory*", "controller*", "integrations*"]
+
+[tool.setuptools.package-data]
+"ember_memory.controller_assets" = ["ui.html", "ui.css", "ui.js"]
+"ember_memory.assets" = ["ember-memory.png"]
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"

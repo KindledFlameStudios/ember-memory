@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ember Memory Controller</title>
+<style>
+{{EMBER_UI_CSS}}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-logo">
+      <svg class="logo-flame" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M13 2C13 2 7 8 7 14C7 17.3 9.7 20 13 20C16.3 20 19 17.3 19 14C19 8 13 2 13 2Z" fill="url(#fg1)"/>
+        <path d="M13 10C13 10 10 13.5 10 16C10 17.6 11.3 19 13 19C14.7 19 16 17.6 16 16C16 13.5 13 10 13 10Z" fill="url(#fg2)"/>
+        <defs>
+          <linearGradient id="fg1" x1="13" y1="2" x2="13" y2="20" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#FFD080"/>
+            <stop offset="100%" stop-color="#FF7820"/>
+          </linearGradient>
+          <linearGradient id="fg2" x1="13" y1="10" x2="13" y2="19" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#fff" stop-opacity="0.9"/>
+            <stop offset="100%" stop-color="#FFA040"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span class="header-title">Ember Memory</span>
+      <span class="header-sub">Controller v2</span>
+    </div>
+    <div class="header-spacer"></div>
+    <div class="engine-pill">
+      <div class="engine-dot" id="engineDot"></div>
+      <span id="enginePillLabel">Engine</span>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+    <button class="tab-btn" data-tab="collections">Collections</button>
+    <button class="tab-btn" data-tab="settings">Settings</button>
+    <button class="tab-btn" data-tab="cli">CLI Status</button>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+
+    <!-- ═══════════ DASHBOARD ═══════════ -->
+    <div class="tab-panel active" id="tab-dashboard">
+
+      <div class="start-panel">
+        <div class="start-card">
+          <div>
+            <div class="start-card-title">Connect CLIs</div>
+            <div class="start-card-note">Claude Code, Gemini CLI, and Codex</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btnStartCli">Open</button>
+        </div>
+        <div class="start-card">
+          <div>
+            <div class="start-card-title">Import Knowledge</div>
+            <div class="start-card-note">Add notes, docs, exported chats, and more</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btnStartImport">Import</button>
+        </div>
+        <div class="start-card">
+          <div>
+            <div class="start-card-title">Test Memory</div>
+            <div class="start-card-note">Search what Ember Memory can recall</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btnStartQuery">Try</button>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:12px;">
+        <div class="panel-hdr">
+          <div class="panel-hdr-title">Test Query</div>
+        </div>
+        <div class="panel-body" style="padding:10px 14px;">
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="testQueryInput" class="fluid" placeholder="Ask ember-memory anything..." style="font-family:var(--font-mono); font-size:12px;" />
+            <button class="btn btn-primary btn-sm" id="btnTestQuery">Search</button>
+          </div>
+          <div id="testQueryResults" style="margin-top:8px;"></div>
+        </div>
+      </div>
+
+      <div class="ai-filter-bar" id="aiFilterBar">
+        <button class="ai-filter-btn active" data-ai="all">All</button>
+        <button class="ai-filter-btn" data-ai="claude">Claude</button>
+        <button class="ai-filter-btn" data-ai="gemini">Gemini</button>
+        <button class="ai-filter-btn" data-ai="codex">Codex</button>
+      </div>
+      <div class="session-filter" id="sessionFilterWrap">
+        <select id="sessionFilter">
+          <option value="">All Sessions</option>
+        </select>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="stat-label">Memories Tracked</div>
+          <div class="stat-value" id="stat-memories">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Hot Memories</div>
+          <div class="stat-value" id="stat-hot">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Connections</div>
+          <div class="stat-value" id="stat-connections">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Engine Ticks</div>
+          <div class="stat-value" id="stat-ticks">—</div>
+        </div>
+        <div class="stat-card clickable" id="heatModeCard" title="Click to toggle heat mode">
+          <div class="stat-label">Heat Mode</div>
+          <div class="mode-badge" id="heatModeBadge">—</div>
+        </div>
+        <div class="stat-card clickable" id="resetEngineCard" title="Reset all Engine state" style="border-color: #662222;">
+          <div class="stat-label">Engine</div>
+          <div class="stat-value" style="font-size:12px; color:#ff6666;">RESET</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-hdr">
+          <div class="panel-hdr-title">Active Memory</div>
+          <span class="refresh-badge" id="heatRefreshTime"></span>
+        </div>
+        <div class="panel-body">
+          <div class="heat-map-area" id="heatMapArea">
+            <div class="loading-text"><div class="spinner"></div> Loading memory heat...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-hdr">
+          <div class="panel-hdr-title">Last Retrieval</div>
+          <span class="refresh-badge" id="retrievalRefreshTime"></span>
+        </div>
+        <div class="panel-body" id="lastRetrievalArea">
+          <div class="empty-state">
+            <div class="empty-icon">&#x1F50D;</div>
+            <span>Waiting for first retrieval...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-hdr">
+          <div class="panel-hdr-title">Activity Feed</div>
+          <span class="refresh-badge" id="activityRefreshTime"></span>
+        </div>
+        <div class="panel-body" id="activityFeedArea">
+          <div class="empty-state">
+            <span>No activity yet — send a message to your AI</span>
+          </div>
+        </div>
+      </div>
+
+
+
+    </div>
+
+    <!-- ═══════════ COLLECTIONS ═══════════ -->
+    <div class="tab-panel" id="tab-collections">
+
+      <div class="section-hdr">
+        <span class="section-title">Collections</span>
+        <div class="section-actions">
+          <button class="btn btn-primary btn-sm" id="btnImportToggle">Import Knowledge</button>
+        </div>
+      </div>
+
+      <div class="import-wizard" id="importWizard">
+        <div class="import-wizard-title">Import Knowledge</div>
+        <div class="import-wizard-sub">Import files into an existing collection or create a new one while you import.</div>
+
+        <div class="import-step">
+          <div class="import-step-label">1. Add content</div>
+          <div class="import-pick-row">
+            <button class="btn btn-secondary btn-sm" id="btnImportBrowseFiles">Select Files</button>
+            <button class="btn btn-secondary btn-sm" id="btnImportBrowseFolder">Select Folder</button>
+          </div>
+          <div class="import-file-list" id="importFileList"></div>
+          <div class="import-supported">Supports .md, .txt, .json, and .jsonl files.</div>
+        </div>
+
+        <div class="import-step">
+          <div class="import-step-label">2. Choose mode</div>
+          <div class="import-mode-switch">
+            <button type="button" class="import-mode-btn active" id="btnImportModeExisting">Add to Existing</button>
+            <button type="button" class="import-mode-btn" id="btnImportModeNew">Create New</button>
+          </div>
+        </div>
+
+        <div class="import-mode-panel active" id="importModeExisting">
+          <div class="import-step">
+            <div class="import-step-label">3. Select collection</div>
+            <select id="importCollectionSelect"></select>
+            <div id="existingNewTopicArea" style="display:none; margin-top:8px;">
+              <div class="import-step-label">New topic name</div>
+              <div class="import-supported" style="margin-bottom:4px;">Add a new topic under this collection group</div>
+              <input type="text" class="fluid" id="existingNewTopicName" placeholder="e.g. identity, reflections, notes" />
+            </div>
+          </div>
+        </div>
+
+        <div class="import-mode-panel" id="importModeNew">
+          <div class="import-step">
+            <div class="import-step-label">3. Collection Name</div>
+            <div class="import-supported" style="margin-bottom:4px;">The group this topic belongs to</div>
+            <div class="form-row" style="margin-bottom:10px; gap:8px;">
+              <select id="importScope" class="fluid" style="flex:0 0 auto; min-width:120px;">
+                <option value="shared">Shared</option>
+                <option value="claude">Claude</option>
+                <option value="gemini">Gemini</option>
+                <option value="codex">Codex</option>
+              </select>
+              <input type="text" class="fluid" id="importCollectionDisplayName" placeholder="Display name (optional)" />
+            </div>
+
+            <div class="import-step-label">Topic Name</div>
+            <div class="import-supported" style="margin-bottom:4px;">What this content is about (e.g. "identity", "reflections")</div>
+            <div class="form-row" style="margin-bottom:8px;">
+              <input type="text" class="fluid" id="importCollectionName" placeholder="e.g. identity, reflections, notes" />
+            </div>
+          </div>
+        </div>
+
+        <div class="import-step">
+          <div class="import-step-label">4. Import</div>
+          <div class="import-action-row">
+            <button class="btn btn-primary" id="btnRunImport">Import</button>
+          </div>
+          <div class="import-supported" id="importProgressText"></div>
+        </div>
+
+        <div id="importSuccessHost"></div>
+
+        <div class="import-tip">Tip: Export AI chats with CinderACE, then import them here.</div>
+      </div>
+
+      <div class="col-list" id="colList">
+        <div class="loading-text"><div class="spinner"></div> Loading collections...</div>
+      </div>
+
+      <div class="workspace-section">
+        <div class="workspace-section-divider"></div>
+        <div class="section-hdr">
+          <div>
+            <div class="section-title">Workspaces</div>
+            <div class="workspace-section-subtitle">Collection presets for focused sessions</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:0;">
+          <div class="workspace-toolbar">
+            <div class="workspace-summary">Configure per-workspace collection search scopes.</div>
+            <button class="btn btn-primary btn-sm" id="btnWorkspaceToggle">New Workspace</button>
+          </div>
+
+          <div class="create-form" id="workspaceCreateForm">
+            <div class="form-row" style="margin-bottom:8px;">
+              <input type="text" class="medium" id="newWorkspaceName" placeholder="workspace-name" />
+              <input type="text" class="fluid" id="newWorkspaceLabel" placeholder="Display label" />
+            </div>
+            <div class="workspace-cwd-row">
+              <span class="workspace-cwd-label">Project Directory</span>
+              <input type="text" class="workspace-cwd-input" id="newWorkspaceCwd" placeholder="Optional — auto-activate when working in this directory" readonly />
+              <button type="button" class="btn btn-secondary btn-sm" id="btnWorkspaceBrowseCwd">Browse</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnWorkspaceClearCwd" disabled>Clear</button>
+            </div>
+            <div class="workspace-cols" id="newWorkspaceCollections"></div>
+            <div class="workspace-actions">
+              <button class="btn btn-secondary btn-sm" id="btnWorkspaceCancel">Cancel</button>
+              <button class="btn btn-primary btn-sm" id="btnCreateWorkspace">Create</button>
+            </div>
+          </div>
+
+          <div id="workspaceList">
+            <div class="loading-text"><div class="spinner"></div> Loading workspaces...</div>
+          </div>
+
+          <div class="workspace-help">Set EMBER_WORKSPACE=name when launching your CLI to activate a workspace. Each workspace controls which collections are searched.</div>
+        </div>
+      </div>
+
+      <div class="promo-card">
+        <div class="promo-icon">&#128293;</div>
+        <div class="promo-text">
+          Looking to grow your collections with clean data?
+          <strong>CinderACE</strong> exports AI conversations from 14 platforms — ready to ingest.
+          <a class="promo-link" id="promoLink" href="https://kindledflamestudios.com">kindledflamestudios.com</a>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ═══════════ SETTINGS ═══════════ -->
+    <div class="tab-panel" id="tab-settings">
+
+      <div class="settings-section">
+        <div class="settings-section-title">Embedding Provider</div>
+        <div class="provider-cards">
+          <div class="provider-card" data-provider="ollama" id="prov-ollama">
+            <div class="provider-name">Ollama</div>
+            <div class="provider-desc">Local — no API key needed</div>
+          </div>
+          <div class="provider-card" data-provider="openai" id="prov-openai">
+            <div class="provider-name">OpenAI</div>
+            <div class="provider-desc">text-embedding-3-small</div>
+          </div>
+          <div class="provider-card" data-provider="google" id="prov-google">
+            <div class="provider-name">Google</div>
+            <div class="provider-desc">gemini-embedding-001</div>
+          </div>
+          <div class="provider-card" data-provider="openrouter" id="prov-openrouter">
+            <div class="provider-name">OpenRouter</div>
+            <div class="provider-desc">baai/bge-m3</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Provider Settings</div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Ollama Endpoint</div>
+              <div class="setting-hint">Used when Ollama is selected</div>
+            </div>
+            <input type="text" class="wide" id="ollamaUrl" placeholder="http://localhost:11434" />
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">OpenAI API Key</div>
+              <div class="setting-hint">Required for OpenAI embeddings</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">
+              <div style="display:flex;gap:4px;">
+                <input type="password" class="wide" id="keyOpenAI" placeholder="sk-..." />
+                <button class="btn btn-secondary btn-sm" onclick="verifyKey('openai')">Verify</button>
+              </div>
+              <span class="verify-status" id="verifyStatus-openai"></span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Google API Key</div>
+              <div class="setting-hint">Required for Google embeddings</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">
+              <div style="display:flex;gap:4px;">
+                <input type="password" class="wide" id="keyGoogle" placeholder="AIza..." />
+                <button class="btn btn-secondary btn-sm" onclick="verifyKey('google')">Verify</button>
+              </div>
+              <span class="verify-status" id="verifyStatus-google"></span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">OpenRouter API Key</div>
+              <div class="setting-hint">Required for OpenRouter embeddings</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">
+              <div style="display:flex;gap:4px;">
+                <input type="password" class="wide" id="keyOpenRouter" placeholder="sk-or-..." />
+                <button class="btn btn-secondary btn-sm" onclick="verifyKey('openrouter')">Verify</button>
+              </div>
+              <span class="verify-status" id="verifyStatus-openrouter"></span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Embedding Model</div>
+              <div class="setting-hint">Model used for generating embeddings</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <select id="embeddingModelSelect" class="wide">
+                <option value="">Select a model...</option>
+              </select>
+              <span class="verify-status" id="verifyModelStatus"></span>
+            </div>
+          </div>
+          <div class="setting-row" id="modelChangeWarning" style="display:none;">
+            <div class="setting-hint" style="color:var(--warning);">
+              ⚠ Changing embedding models will make existing memories incompatible.
+              Run <code>ember_memory.ingest --rebuild-all</code> after switching.
+            </div>
+          </div>
+          <div class="provider-actions">
+            <button class="btn btn-primary btn-sm" id="btnSaveProviderSettings">Save Provider Settings</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Storage Backend</div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Vector Database</div>
+              <div class="setting-hint">Where embeddings are stored</div>
+            </div>
+            <select id="backendSelect">
+              <option value="chromadb">ChromaDB</option>
+              <option value="lancedb">LanceDB</option>
+              <option value="qdrant">Qdrant</option>
+              <option value="weaviate">Weaviate</option>
+              <option value="pinecone">Pinecone</option>
+              <option value="pgvector">pgvector</option>
+              <option value="sqlite-vec">SQLite-vec</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Data Directory</div>
+              <div class="setting-hint">Where local data is stored</div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="text" class="wide" id="dataDir" />
+              <button class="btn btn-secondary btn-sm" id="btnBrowse">Browse</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Namespace Mode</div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Collection Visibility</div>
+              <div class="setting-hint">Controls which collections each CLI session can access</div>
+            </div>
+            <select id="namespaceModeSelect">
+              <option value="scoped">Scoped (default) — each CLI sees shared + its own private collections</option>
+              <option value="open">Open — all CLIs see all collections (single AI setup)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section" id="ollamaStatusSection">
+        <div class="settings-section-title">Ollama Status</div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Connection</div>
+              <div class="setting-hint">Local Ollama instance</div>
+            </div>
+            <div class="ollama-status">
+              <div class="status-dot" id="ollamaStatusDot"></div>
+              <span id="ollamaStatusText">Checking...</span>
+              <button class="btn btn-secondary btn-sm" id="btnCheckOllama">Check</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Search Parameters</div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Similarity Threshold</div>
+              <div class="setting-hint">Minimum similarity score (0–1)</div>
+            </div>
+            <input type="number" class="medium" id="simThreshold" min="0" max="1" step="0.05" />
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Max Results</div>
+              <div class="setting-hint">Maximum number of search hits</div>
+            </div>
+            <input type="number" class="medium" id="maxResults" min="1" max="50" />
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Max Preview Chars</div>
+              <div class="setting-hint">Characters shown in result preview</div>
+            </div>
+            <input type="number" class="medium" id="maxPreviewChars" min="50" max="1000" />
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Auto-Retrieval Hook</div>
+              <div class="setting-hint">Automatically query the engine on every AI prompt</div>
+            </div>
+            <label class="toggle" style="margin-right:150px;">
+              <input type="checkbox" id="autoQueryToggle" checked>
+              <div class="toggle-track"></div>
+              <div class="toggle-thumb"></div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div id="launchDirsSectionHost"></div>
+
+      <div style="margin-top:6px;">
+        <button class="btn btn-primary" id="btnSaveSettings">Save Settings</button>
+      </div>
+
+    </div>
+
+    <!-- ═══════════ CLI STATUS ═══════════ -->
+    <div class="tab-panel" id="tab-cli">
+
+      <div class="section-hdr" style="margin-bottom:12px;">
+        <span class="section-title">CLI Detection</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-secondary btn-sm" id="btnHookSelfTest">Test Hooks</button>
+          <button class="btn btn-primary btn-sm" id="btnInstallAll">Run Install</button>
+        </div>
+      </div>
+      <div class="install-result" id="installResult" aria-live="polite"></div>
+      <div class="hook-test-result" id="hookTestResult" aria-live="polite"></div>
+
+      <div class="cli-grid" id="cliGrid">
+        <div class="loading-text"><div class="spinner"></div> Detecting CLIs...</div>
+      </div>
+
+      <div class="settings-section" style="margin-top:20px;">
+        <div class="settings-section-title">Desktop App</div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="setting-row">
+            <div style="flex:1;">
+              <div class="setting-label">App Launcher</div>
+              <div class="setting-hint">Add Ember Memory to your app menu or Windows Start Menu</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span id="desktopStatusBadge" class="status-badge" style="background:#333;color:#aaa;">Not Installed</span>
+              <button class="btn btn-primary btn-sm" id="btnInstallDesktop">Install App Launcher</button>
+              <button class="btn btn-danger btn-sm" id="btnUninstallDesktop" style="display:none;">Remove Launcher</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section" style="margin-top:20px;">
+        <div class="settings-section-title">Other AI Apps (Advanced)</div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="setting-row">
+            <div style="flex:1;">
+              <div class="setting-label">Optional Memory Lanes</div>
+              <div class="custom-cli-intro">Most users can skip this. Use it only for another AI app or command-line chat you want to connect manually.</div>
+            </div>
+          </div>
+          <div class="custom-cli-form">
+            <div class="custom-cli-field">
+              <label for="customCliName">AI app name</label>
+              <input type="text" class="fluid" id="customCliName" placeholder="Name shown in Ember Memory" />
+            </div>
+            <div class="custom-cli-field">
+              <label for="customCliId">Memory label</label>
+              <input type="text" class="fluid" id="customCliId" placeholder="auto-filled" />
+            </div>
+            <button class="btn btn-primary btn-sm" id="btnAddCustomCli">Create Lane</button>
+          </div>
+          <div id="customClisList" class="custom-cli-list"></div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+{{EMBER_UI_JS}}
+</script>
+</body>
+</html>

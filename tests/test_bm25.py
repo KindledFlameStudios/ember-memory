@@ -13,10 +13,10 @@ def test_bm25_exact_match_scores_higher():
     bm25 = BM25()
     bm25.index([
         "The cat sat on the mat",
-        "Flik is a Flameborn character",
+        "Nova is a science fiction character",
         "Python programming guide",
     ])
-    scores = bm25.score_all("who is Flik")
+    scores = bm25.score_all("who is Nova")
     assert scores[1] > scores[0]
     assert scores[1] > scores[2]
 
@@ -46,8 +46,8 @@ def test_retrieve_keyword_match_gets_rrf_boost():
             "similarity": 0.9,
         },
         {
-            "id": "flik",
-            "content": "Flik is a Flameborn character with a direct profile.",
+            "id": "nova",
+            "content": "Nova is a science fiction character with a direct profile.",
             "metadata": {},
             "similarity": 0.72,
         },
@@ -57,11 +57,11 @@ def test_retrieve_keyword_match_gets_rrf_boost():
     embedder.embed.return_value = [0.1, 0.1, 0.1, 0.1]
 
     results = retrieve(
-        "who is Flik",
+        "who is Nova",
         ai_id="claude",
         backend=backend,
         embedder=embedder,
         similarity_threshold=0.35,
     )
 
-    assert [result.id for result in results][:2] == ["flik", "generic"]
+    assert [result.id for result in results][:2] == ["nova", "generic"]

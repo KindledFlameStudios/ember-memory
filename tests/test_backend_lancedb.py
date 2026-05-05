@@ -6,8 +6,19 @@ no external server required.
 Vectors are 4-dimensional for speed.
 """
 
+import os
+
 import pytest
 from ember_memory.core.backends.lancedb_backend import LanceBackend
+
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("EMBER_TEST_LANCEDB") != "1",
+    reason=(
+        "LanceDB is an optional backend; run with EMBER_TEST_LANCEDB=1 "
+        "when validating the lancedb extra."
+    ),
+)
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────

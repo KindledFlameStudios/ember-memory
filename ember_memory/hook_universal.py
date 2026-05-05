@@ -61,6 +61,9 @@ def main():
             return
 
         from ember_memory import config
+        if not config.AUTO_QUERY:
+            return
+
         from ember_memory.core.search import retrieve
         from ember_memory.core.backends.loader import get_backend_v2
         from ember_memory.core.embeddings.loader import get_embedding_provider

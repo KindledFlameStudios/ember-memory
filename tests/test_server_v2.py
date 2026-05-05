@@ -8,6 +8,7 @@ Verifies that:
 
 import pytest
 from unittest.mock import MagicMock, patch
+from ember_memory.core.engine.state import EngineState
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -232,3 +233,29 @@ class TestServerInit:
         assert call_args[1] == "mem_001"
         assert call_args[2] == "new content"
         assert isinstance(call_args[3], list)  # embedding
+
+
+def test_get_hot_memories_aggregates_session_scopes_and_skips_disabled(tmp_path):
+    from ember_memory.server import _get_hot_memories
+
+    db_path = tmp_path / "engine.db"
+    state = EngineState(db_path=str(db_path))
+    state.set_heat("doc1", 1.2, ai_id="codex-thread-1")
+    state.set_heat("doc1", 0.8, ai_id="codex-thread-2")
+    state.set_heat("doc2", 3.0, ai_id="codex-thread-3")
+    state.upsert_memory_meta("doc1", "codex--identity", "Identity memory")
+    state.upsert_memory_meta("doc2", "archive", "Disabled memory")
+    state.set_config("collection_disabled_archive", "true")
+
+    with patch("ember_memory.server._engine_db_path", return_value=str(db_path)):
+        hot_memories, hot_topics = _get_hot_memories(5, "codex")
+
+    assert hot_memories == [
+        {
+            "id": "doc1",
+            "collection": "codex--identity",
+            "preview": "Identity memory",
+            "heat": 2.0,
+        }
+    ]
+    assert hot_topics == ["identity"]

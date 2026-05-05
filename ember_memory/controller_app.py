@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Ember Memory — Settings & Management App
-=========================================
-Native desktop app for configuring and managing Ember Memory.
+Ember Memory — Desktop Controller
+=================================
+Native desktop app for configuring, testing, and managing Ember Memory.
 Uses pywebview for a native window with modern HTML/CSS frontend.
 
-Run: python setup_wizard.py
+Run: python -m ember_memory
 """
 
 import json
@@ -13,11 +13,20 @@ import logging
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tomllib
+import ctypes.util
 from datetime import datetime
+from importlib import resources
+from ember_memory.core.engine.scopes import (
+    aggregate_heat_by_memory,
+    get_all_cli_ids,
+    get_disabled_collections,
+    scope_to_cli,
+)
 # On Linux with conda, the system WebKit2 typelib may not be on GI's search path.
 # Add the standard system typelib directory so pywebview can find GTK + WebKit2.
 if platform.system() == "Linux":
@@ -40,11 +49,193 @@ CLAUDE_SETTINGS = os.path.expanduser("~/.claude/settings.json")
 GEMINI_SETTINGS = os.path.expanduser("~/.gemini/settings.json")
 CODEX_CONFIG = os.path.expanduser("~/.codex/config.toml")
 CODEX_HOOKS = os.path.expanduser("~/.codex/hooks.json")
-EMBER_ROOT = os.path.dirname(os.path.abspath(__file__))
-DASHBOARD_AI_IDS = ("claude", "gemini", "codex")
+EMBER_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DASHBOARD_AI_IDS_BASE = ["claude", "gemini", "codex"]
+
+def get_all_dashboard_ai_ids(state=None):
+    if not state:
+        try:
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            if os.path.exists(db_path):
+                from ember_memory.core.engine.state import EngineState
+                state = EngineState(db_path=db_path)
+        except Exception:
+            return list(DASHBOARD_AI_IDS_BASE)
+    return get_all_cli_ids(state)
 
 
-# ── Config I/O ───────────────────────────────────────────────────────────────
+def _normalize_custom_cli_id(cli_id):
+    return str(cli_id or "").strip().lower()
+
+
+def _validate_custom_cli_id(cli_id):
+    if not re.match(r"^[a-z0-9][a-z0-9_-]*$", cli_id):
+        return "CLI ID must use lowercase letters, numbers, dashes, or underscores"
+    if cli_id in {"all", "shared", *DASHBOARD_AI_IDS_BASE}:
+        return f"'{cli_id}' is reserved"
+    return ""
+
+
+def _load_custom_clis(state):
+    try:
+        clis = json.loads(state.get_config("custom_clis", "[]"))
+    except Exception:
+        return []
+    if not isinstance(clis, list):
+        return []
+    return [
+        {
+            "id": _normalize_custom_cli_id(cli.get("id")),
+            "name": str(cli.get("name") or cli.get("id") or "").strip(),
+        }
+        for cli in clis
+        if isinstance(cli, dict) and _normalize_custom_cli_id(cli.get("id"))
+    ]
+
+
+def _shell_quote(value):
+    text = str(value)
+    text = text.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+    return f'"{text}"'
+
+
+def _command_string(*parts):
+    values = [str(part) for part in parts]
+    if platform.system() == "Windows":
+        return subprocess.list2cmdline(values)
+    return " ".join(shlex.quote(value) for value in values)
+
+
+def _script_path(script_name):
+    executable = shutil.which(script_name)
+    if executable:
+        return executable
+    bin_dir = os.path.dirname(sys.executable)
+    suffixes = [".exe", "-script.py", ".cmd", ".bat"] if platform.system() == "Windows" else [""]
+    for suffix in suffixes:
+        candidate = os.path.join(bin_dir, script_name + suffix)
+        if os.path.exists(candidate):
+            return candidate
+    return ""
+
+
+def _script_command(script_name, fallback_module):
+    script = _script_path(script_name)
+    if script:
+        return script, []
+    return sys.executable, ["-m", fallback_module]
+
+
+def _script_command_string(script_name, fallback_module):
+    command, args = _script_command(script_name, fallback_module)
+    return _command_string(command, *args)
+
+
+def _module_command(module_name):
+    return sys.executable, ["-m", module_name]
+
+
+def _module_command_string(module_name):
+    return _command_string(sys.executable, "-m", module_name)
+
+
+def _read_jsonl(path):
+    if not os.path.exists(path):
+        return []
+    rows = []
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except Exception:
+                continue
+    return rows
+
+
+def _hook_self_test_specs():
+    return [
+        {
+            "id": "claude",
+            "label": "Claude Code",
+            "script": "ember-memory-claude-hook",
+            "module": "ember_memory.hook",
+            "payload": {
+                "prompt": "Ember Memory hook self test for Claude Code plumbing.",
+                "hook_event_name": "UserPromptSubmit",
+            },
+            "expects_json": False,
+        },
+        {
+            "id": "gemini",
+            "label": "Gemini CLI",
+            "script": "ember-memory-gemini-hook",
+            "module": "ember_memory.gemini_hook",
+            "payload": {
+                "prompt": "Ember Memory hook self test for Gemini CLI plumbing.",
+                "hook_event_name": "BeforeAgent",
+                "session_id": "self-test",
+            },
+            "expects_json": True,
+        },
+        {
+            "id": "codex",
+            "label": "Codex",
+            "script": "ember-memory-codex-hook",
+            "module": "ember_memory.codex_hook",
+            "payload": {
+                "prompt": "Ember Memory hook self test for Codex plumbing.",
+                "hook_event_name": "UserPromptSubmit",
+                "session_id": "self-test",
+                "cwd": os.getcwd(),
+            },
+            "expects_json": True,
+        },
+    ]
+
+
+def _custom_cli_setup(cli_id):
+    cfg = load_config()
+    hook_bootstrap = (
+        "import sys; "
+        f"sys.path.insert(0, {EMBER_ROOT!r}); "
+        "from ember_memory.hook_universal import main; "
+        "main()"
+    )
+    mcp_bootstrap = (
+        "import sys; "
+        f"sys.path.insert(0, {EMBER_ROOT!r}); "
+        "from ember_memory.server import mcp; "
+        "mcp.run(transport='stdio')"
+    )
+    return {
+        "hook_cmd": (
+            f"EMBER_AI_ID={_shell_quote(cli_id)} "
+            f"{_shell_quote(sys.executable)} -c {_shell_quote(hook_bootstrap)}"
+        ),
+        "mcp_config": json.dumps({
+            "command": sys.executable,
+            "args": ["-c", mcp_bootstrap],
+            "env": {
+                "EMBER_AI_ID": cli_id,
+                "EMBER_DATA_DIR": cfg.get("data_dir", DEFAULT_DATA_DIR),
+            },
+        }, indent=2),
+    }
+
+
+def normalize_ollama_url(url):
+    raw = str(url or "").strip() or "http://localhost:11434/api/embeddings"
+    raw = raw.rstrip("/")
+    if raw.endswith("/api/tags"):
+        raw = raw[: -len("/api/tags")]
+    if raw.endswith("/api/embed") or raw.endswith("/api/embeddings"):
+        return raw
+    return raw + "/api/embeddings"
+
 
 def load_config():
     defaults = {
@@ -52,15 +243,21 @@ def load_config():
         "data_dir": DEFAULT_DATA_DIR,
         "embedding_provider": "ollama",
         "embedding_model": "bge-m3",
+        "openai_embedding_model": "text-embedding-3-small",
+        "google_embedding_model": "gemini-embedding-001",
+        "openrouter_embedding_model": "baai/bge-m3",
         "ollama_url": "http://localhost:11434/api/embeddings",
         "openai_key": "",
         "google_key": "",
+        "openrouter_key": "",
         "default_collection": "general",
         "similarity_threshold": "0.45",
         "max_results": "5",
         "max_preview": "800",
         "namespace_mode": "scoped",
+        "auto_query": "true",
     }
+    seen_keys = set()
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'r') as f:
             for line in f:
@@ -72,7 +269,35 @@ def load_config():
                         key = "max_results"
                     elif key == "max_preview_chars":
                         key = "max_preview"
+                    elif key == "openai_api_key":
+                        key = "openai_key"
+                    elif key == "google_api_key":
+                        key = "google_key"
+                    elif key == "openrouter_api_key":
+                        key = "openrouter_key"
+                    seen_keys.add(key)
                     defaults[key] = val
+    if defaults.get("backend") == "chroma":
+        defaults["backend"] = "chromadb"
+    elif defaults.get("backend") == "sqlite_vss":
+        defaults["backend"] = "sqlite-vec"
+
+    # v2 release-candidate builds briefly saved 0.7 from a UI fallback even
+    # though the app default is 0.45. Treat that exact legacy value as the
+    # intended default so test installs do not inherit an over-strict threshold.
+    if defaults.get("similarity_threshold") == "0.7":
+        defaults["similarity_threshold"] = "0.45"
+
+    # Migrate old single-model config to provider-specific keys if needed.
+    if "openai_embedding_model" not in seen_keys and defaults.get("embedding_provider") == "openai":
+        defaults["openai_embedding_model"] = defaults.get("embedding_model", "text-embedding-3-small")
+    if "google_embedding_model" not in seen_keys and defaults.get("embedding_provider") == "google":
+        model = defaults.get("embedding_model", "")
+        defaults["google_embedding_model"] = model if model and model != "bge-m3" else "gemini-embedding-001"
+    if "openrouter_embedding_model" not in seen_keys and defaults.get("embedding_provider") == "openrouter":
+        model = defaults.get("embedding_model", "")
+        defaults["openrouter_embedding_model"] = model if model and model != "bge-m3" else "baai/bge-m3"
+
     return defaults
 
 
@@ -87,40 +312,33 @@ def save_config(config):
         f"EMBER_BACKEND={config['backend']}",
         f"EMBER_DATA_DIR={config['data_dir']}",
         f"EMBER_EMBEDDING_PROVIDER={config['embedding_provider']}",
-        f"EMBER_EMBEDDING_MODEL={config['embedding_model']}",
-        f"EMBER_OLLAMA_URL={config['ollama_url']}",
+        f"EMBER_EMBEDDING_MODEL={config.get('embedding_model', 'bge-m3')}",
+        f"EMBER_OPENAI_EMBEDDING_MODEL={config.get('openai_embedding_model', 'text-embedding-3-small')}",
+        f"EMBER_GOOGLE_EMBEDDING_MODEL={config.get('google_embedding_model', 'gemini-embedding-001')}",
+        f"EMBER_OPENROUTER_EMBEDDING_MODEL={config.get('openrouter_embedding_model', 'baai/bge-m3')}",
+        f"EMBER_OLLAMA_URL={normalize_ollama_url(config['ollama_url'])}",
         f"EMBER_OPENAI_API_KEY={config.get('openai_key', '')}",
         f"EMBER_GOOGLE_API_KEY={config.get('google_key', '')}",
+        f"EMBER_OPENROUTER_API_KEY={config.get('openrouter_key', '')}",
         f"EMBER_DEFAULT_COLLECTION={config['default_collection']}",
         f"EMBER_SIMILARITY_THRESHOLD={config['similarity_threshold']}",
         f"EMBER_MAX_HOOK_RESULTS={config['max_results']}",
         f"EMBER_MAX_PREVIEW_CHARS={config['max_preview']}",
         f"EMBER_NAMESPACE_MODE={config.get('namespace_mode', 'scoped')}",
+        f"EMBER_AUTO_QUERY={config.get('auto_query', 'true')}",
     ]
     with open(CONFIG_FILE, 'w') as f:
         f.write("\n".join(lines) + "\n")
 
 
 def _codex_server_command():
-    """Return a stdio MCP launch command that works from a source checkout."""
-    bootstrap = (
-        "import sys; "
-        f"sys.path.insert(0, {EMBER_ROOT!r}); "
-        "from ember_memory.server import mcp; "
-        "mcp.run(transport='stdio')"
-    )
-    return sys.executable, ["-c", bootstrap]
+    """Return a stdio MCP launch command that works from wheel and source installs."""
+    return _module_command("ember_memory.server")
 
 
 def _source_server_command():
-    """Return a generic stdio MCP launch command for this source checkout."""
-    bootstrap = (
-        "import sys; "
-        f"sys.path.insert(0, {EMBER_ROOT!r}); "
-        "from ember_memory.server import mcp; "
-        "mcp.run(transport='stdio')"
-    )
-    return sys.executable, ["-c", bootstrap]
+    """Return a generic stdio MCP launch command that works after installation."""
+    return _module_command("ember_memory.server")
 
 
 def _toml_quote(value):
@@ -230,18 +448,22 @@ def _codex_hook_configured():
             command = hook.get("command", "")
             if "ember" in command.lower() or _codex_hook_script_path() in command:
                 return True
+            if "integrations.codex.hook" in command:
+                return True
     return False
 
 
 def _write_codex_hooks():
     os.makedirs(os.path.dirname(CODEX_HOOKS), exist_ok=True)
-    hook_cmd = f"{sys.executable} {_codex_hook_script_path()}"
+    hook_cmd = _script_command_string("ember-memory-codex-hook", "ember_memory.codex_hook")
     hooks = {
         "hooks": {
             "UserPromptSubmit": [
                 {
+                    "matcher": "*",
                     "hooks": [
                         {
+                            "name": "ember-memory",
                             "type": "command",
                             "command": hook_cmd,
                             "timeout": 10,
@@ -297,48 +519,30 @@ def normalize_dashboard_ai_id(ai_id):
     return raw
 
 
-def _get_cli_from_session(session_scope):
+def _get_cli_from_session(session_scope, cli_ids=None):
     """Map a session ID back to its parent CLI for dashboard aggregation.
     cc-12345 -> claude, gemini-98765 -> gemini, codex-555 -> codex"""
-    s = str(session_scope)
-    if s.startswith("cc-") or s.startswith("claude"):
-        return "claude"
-    if s.startswith("gemini"):
-        return "gemini"
-    if s.startswith("codex"):
-        return "codex"
-    # Backward compatibility: older Codex hook installs wrote raw thread IDs
-    # (UUID-like strings such as 019d...-....) directly into heat scope.
-    if re.match(r"^[0-9a-f]{8}-[0-9a-f-]{27,}$", s):
-        return "codex"
-    return None
+    return scope_to_cli(session_scope, cli_ids=cli_ids)
+
+
+def _filter_retrieval_snapshot(state, retrieval):
+    """Hide disabled collections from dashboard retrieval previews."""
+    if not retrieval:
+        return retrieval
+
+    disabled = get_disabled_collections(state)
+    results = [
+        result
+        for result in retrieval.get("results", [])
+        if result.get("collection", "") not in disabled
+    ]
+    if len(results) == len(retrieval.get("results", [])):
+        return retrieval
+    return {**retrieval, "results": results}
 
 
 def get_dashboard_heat(state, ai_id=None):
-    selected_ai = normalize_dashboard_ai_id(ai_id)
-
-    # Get ALL heat entries from the database (all scopes)
-    conn = state._conn
-    rows = conn.execute("SELECT ai_id, memory_id, heat FROM heat_map WHERE heat > 0.01").fetchall()
-
-    merged = {}
-    for row in rows:
-        scope = row["ai_id"] if row["ai_id"] else ""
-        mem_id = row["memory_id"]
-        heat = float(row["heat"])
-
-        # Map session IDs to parent CLI for dashboard
-        parent_cli = _get_cli_from_session(scope) if scope else None
-
-        if selected_ai is not None:
-            # Filtered view: only show entries belonging to this CLI
-            if parent_cli == selected_ai or scope == selected_ai:
-                merged[mem_id] = merged.get(mem_id, 0.0) + heat
-        else:
-            # "All" view: aggregate everything
-            merged[mem_id] = merged.get(mem_id, 0.0) + heat
-
-    return merged
+    return aggregate_heat_by_memory(state, ai_id=normalize_dashboard_ai_id(ai_id))
 
 
 def get_dashboard_connections(state, ai_id=None, min_strength=0.0):
@@ -420,6 +624,21 @@ class EmberAPI:
     def get_config(self):
         return load_config()
 
+    def open_external_url(self, url):
+        """Open a trusted external URL in the system browser."""
+        try:
+            import webbrowser
+            url = str(url or "").strip()
+            allowed = (
+                "https://kindledflamestudios.com",
+                "https://www.kindledflamestudios.com",
+            )
+            if not any(url == base or url.startswith(base + "/") for base in allowed):
+                return {"ok": False, "msg": "External URL is not allowed"}
+            return {"ok": bool(webbrowser.open(url)), "msg": "Opened browser"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
     def save_settings(self, incoming):
         try:
             # Merge incoming partial config with current config
@@ -430,6 +649,7 @@ class EmberAPI:
             field_map = {
                 "openai_api_key": "openai_key",
                 "google_api_key": "google_key",
+                "openrouter_api_key": "openrouter_key",
                 "max_preview_chars": "max_preview",
             }
             for ui_key, config_key in field_map.items():
@@ -555,6 +775,72 @@ class EmberAPI:
 
         return result
 
+    def get_tray_status(self):
+        """Check if system tray is running."""
+        try:
+            # Check if pystray process is running
+            import psutil
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    cmdline = ' '.join(proc.info.get('cmdline', []) or [])
+                    if 'ember-memory' in cmdline and 'tray' in cmdline:
+                        return {"running": True, "pid": proc.info['pid']}
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            return {"running": False, "pid": None}
+        except ImportError:
+            # psutil not installed, fallback to simple check
+            return {"running": False, "pid": None, "msg": "psutil not installed"}
+        except Exception as e:
+            return {"running": False, "pid": None, "msg": str(e)}
+
+    def launch_tray(self):
+        """Launch the system tray application."""
+        try:
+            # Launch in background, detached from this process
+            subprocess.Popen(
+                [sys.executable, "-m", "controller"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            return {"ok": True, "msg": "System tray launched"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def stop_tray(self):
+        """Stop the system tray application."""
+        try:
+            import psutil
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    cmdline = ' '.join(proc.info.get('cmdline', []) or [])
+                    if 'ember-memory' in cmdline and 'tray' in cmdline:
+                        proc.terminate()
+                        return {"ok": True, "msg": f"System tray stopped (PID {proc.info['pid']})"}
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            return {"ok": True, "msg": "System tray was not running"}
+        except ImportError:
+            return {"ok": False, "msg": "psutil not installed - cannot stop tray"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def get_desktop_launcher_status(self):
+        """Check whether the OS desktop launcher is installed."""
+        from ember_memory.desktop_integration import desktop_launcher_status
+        return desktop_launcher_status()
+
+    def install_desktop_launcher(self):
+        """Install app menu / Start Menu launcher for Ember Memory."""
+        from ember_memory.desktop_integration import install_desktop_launcher
+        return install_desktop_launcher()
+
+    def uninstall_desktop_launcher(self):
+        """Remove app menu / Start Menu launcher for Ember Memory."""
+        from ember_memory.desktop_integration import uninstall_desktop_launcher
+        return uninstall_desktop_launcher()
+
     def run_install(self):
         """Idempotent install: register Ember Memory with supported local CLIs.
 
@@ -562,6 +848,7 @@ class EmberAPI:
         config files only get the launch pointers and hook wiring they need.
         """
         errors = []
+        installed = []
         cfg = load_config()
         data_dir = cfg.get("data_dir", DEFAULT_DATA_DIR)
 
@@ -569,12 +856,12 @@ class EmberAPI:
         try:
             os.makedirs(data_dir, exist_ok=True)
             save_config(cfg)
+            installed.append("config.env")
         except Exception as e:
             errors.append(f"Data dir: {e}")
 
         # 2. MCP server — register in .claude.json (idempotent)
         try:
-            server_path = os.path.join(EMBER_ROOT, "ember_memory", "server.py")
             python_path = sys.executable
 
             config_data = {}
@@ -588,7 +875,11 @@ class EmberAPI:
             existing = config_data["mcpServers"].get("ember-memory")
             desired = {
                 "command": python_path,
-                "args": [server_path],
+                "args": ["-m", "ember_memory.server"],
+                "env": {
+                    "EMBER_AI_ID": "claude",
+                    "EMBER_DATA_DIR": data_dir,
+                },
             }
 
             # Only write if missing or changed
@@ -596,14 +887,14 @@ class EmberAPI:
                 config_data["mcpServers"]["ember-memory"] = desired
                 with open(CLAUDE_JSON, 'w') as f:
                     json.dump(config_data, f, indent=2)
+            installed.append("Claude Code MCP")
         except Exception as e:
             errors.append(f"MCP: {e}")
 
         # 3. Hook — register in settings.json (idempotent)
         try:
-            hook_path = os.path.join(EMBER_ROOT, "ember_memory", "hook.py")
             python_path = sys.executable
-            hook_cmd = f"{python_path} {hook_path}"
+            hook_cmd = _script_command_string("ember-memory-claude-hook", "ember_memory.hook")
 
             settings = {}
             os.makedirs(os.path.dirname(CLAUDE_SETTINGS), exist_ok=True)
@@ -622,86 +913,211 @@ class EmberAPI:
                 if isinstance(entry, dict) and "hooks" in entry:
                     for h in entry["hooks"]:
                         if "ember" in h.get("command", "").lower():
+                            h["name"] = "ember-memory"
+                            h["type"] = "command"
                             h["command"] = hook_cmd
+                            h["timeout"] = 10
                             found = True
 
             if not found:
                 settings["hooks"]["UserPromptSubmit"].append({
                     "matcher": "*",
-                    "hooks": [{"type": "command", "command": hook_cmd, "timeout": 10}],
+                    "hooks": [{
+                        "name": "ember-memory",
+                        "type": "command",
+                        "command": hook_cmd,
+                        "timeout": 10,
+                    }],
                 })
 
             with open(CLAUDE_SETTINGS, 'w') as f:
                 json.dump(settings, f, indent=2)
+            installed.append("Claude Code hook")
         except Exception as e:
             errors.append(f"Hook: {e}")
 
-        # 4. Gemini CLI — register hook + MCP if installed
-        if shutil.which("gemini"):
-            try:
-                gemini_hook_path = os.path.join(EMBER_ROOT, "integrations", "gemini_cli", "hook.py")
-                gemini_command, gemini_args = _source_server_command()
-                gs = {}
-                if os.path.exists(GEMINI_SETTINGS):
-                    with open(GEMINI_SETTINGS, 'r') as f:
-                        gs = json.load(f)
+        # 4. Gemini CLI — register hook + MCP idempotently.
+        try:
+            gemini_command, gemini_args = _source_server_command()
+            gs = {}
+            if os.path.exists(GEMINI_SETTINGS):
+                with open(GEMINI_SETTINGS, 'r') as f:
+                    gs = json.load(f)
 
-                # MCP server
-                if "mcpServers" not in gs:
-                    gs["mcpServers"] = {}
-                gs["mcpServers"]["ember-memory"] = {
-                    "command": gemini_command,
-                    "args": gemini_args,
-                    "env": {
-                        "EMBER_AI_ID": "gemini",
-                        "EMBER_DATA_DIR": data_dir,
-                    },
-                    "timeout": 30000
-                }
+            # MCP server
+            if "mcpServers" not in gs:
+                gs["mcpServers"] = {}
+            gs["mcpServers"]["ember-memory"] = {
+                "command": gemini_command,
+                "args": gemini_args,
+                "env": {
+                    "EMBER_AI_ID": "gemini",
+                    "EMBER_DATA_DIR": data_dir,
+                },
+                "timeout": 30000
+            }
 
-                # BeforeAgent hook
-                if "hooks" not in gs:
-                    gs["hooks"] = {}
-                if "BeforeAgent" not in gs["hooks"]:
-                    gs["hooks"]["BeforeAgent"] = []
+            # BeforeAgent hook
+            if "hooks" not in gs:
+                gs["hooks"] = {}
+            if "BeforeAgent" not in gs["hooks"]:
+                gs["hooks"]["BeforeAgent"] = []
 
-                # Check if ember hook already exists
-                ember_exists = False
-                for entry in gs["hooks"]["BeforeAgent"]:
-                    if isinstance(entry, dict):
-                        for h in entry.get("hooks", []):
-                            if "ember" in h.get("name", "").lower() or "ember" in h.get("command", "").lower():
-                                h["command"] = f"{sys.executable} {gemini_hook_path}"
-                                ember_exists = True
+            # Check if ember hook already exists
+            ember_exists = False
+            for entry in gs["hooks"]["BeforeAgent"]:
+                if isinstance(entry, dict):
+                    for h in entry.get("hooks", []):
+                        if "ember" in h.get("name", "").lower() or "ember" in h.get("command", "").lower():
+                            h["name"] = "ember-memory"
+                            h["type"] = "command"
+                            h["command"] = _script_command_string(
+                                "ember-memory-gemini-hook",
+                                "ember_memory.gemini_hook",
+                            )
+                            h["timeout"] = 10000
+                            ember_exists = True
 
-                if not ember_exists:
-                    gs["hooks"]["BeforeAgent"].append({
-                        "matcher": "*",
-                        "hooks": [{
-                            "name": "ember-memory",
-                            "type": "command",
-                            "command": f"{sys.executable} {gemini_hook_path}",
-                            "timeout": 10000
-                        }]
-                    })
+            if not ember_exists:
+                gs["hooks"]["BeforeAgent"].append({
+                    "matcher": "*",
+                    "hooks": [{
+                        "name": "ember-memory",
+                        "type": "command",
+                        "command": _script_command_string(
+                            "ember-memory-gemini-hook",
+                            "ember_memory.gemini_hook",
+                        ),
+                        "timeout": 10000
+                    }]
+                })
 
-                os.makedirs(os.path.dirname(GEMINI_SETTINGS), exist_ok=True)
-                with open(GEMINI_SETTINGS, 'w') as f:
-                    json.dump(gs, f, indent=2)
-            except Exception as e:
-                errors.append(f"Gemini CLI: {e}")
+            os.makedirs(os.path.dirname(GEMINI_SETTINGS), exist_ok=True)
+            with open(GEMINI_SETTINGS, 'w') as f:
+                json.dump(gs, f, indent=2)
+            installed.append("Gemini CLI MCP + hook")
+        except Exception as e:
+            errors.append(f"Gemini CLI: {e}")
 
-        # 5. Codex — register MCP server if installed
-        if shutil.which("codex"):
-            try:
-                _write_codex_config(data_dir)
-                _write_codex_hooks()
-            except Exception as e:
-                errors.append(f"Codex: {e}")
+        # 5. Codex — register MCP server + hook idempotently.
+        try:
+            _write_codex_config(data_dir)
+            _write_codex_hooks()
+            installed.append("Codex MCP + hook")
+        except Exception as e:
+            errors.append(f"Codex: {e}")
 
         if errors:
-            return {"ok": False, "msg": "; ".join(errors)}
-        return {"ok": True, "msg": "Installed! Restart your CLIs to activate."}
+            return {"ok": False, "msg": "; ".join(errors), "installed": installed}
+        return {
+            "ok": True,
+            "msg": "Installed: " + ", ".join(installed) + ". Restart your CLIs to activate.",
+            "installed": installed,
+            "data_dir": data_dir,
+        }
+
+    def run_hook_self_test(self):
+        """Run installed hook commands directly and report plumbing health."""
+        cfg = load_config()
+        data_dir = cfg.get("data_dir", DEFAULT_DATA_DIR)
+        os.makedirs(data_dir, exist_ok=True)
+        invocation_path = os.path.join(data_dir, "hook_invocations.jsonl")
+        before = _read_jsonl(invocation_path)
+        before_len = len(before)
+        results = []
+
+        for spec in _hook_self_test_specs():
+            command, args = _script_command(spec["script"], spec["module"])
+            payload = json.dumps(spec["payload"])
+            env = {
+                **os.environ,
+                "EMBER_AI_ID": spec["id"],
+                "EMBER_DATA_DIR": data_dir,
+            }
+            result = {
+                "id": spec["id"],
+                "label": spec["label"],
+                "command": _command_string(command, *args),
+                "ok": False,
+                "returncode": None,
+                "stdout_valid": False,
+                "logged": False,
+                "hook_status": "",
+                "hits": None,
+                "msg": "",
+            }
+            try:
+                proc = subprocess.run(
+                    [command, *args],
+                    input=payload,
+                    text=True,
+                    capture_output=True,
+                    timeout=15,
+                    env=env,
+                    cwd=os.path.expanduser("~"),
+                )
+                result["returncode"] = proc.returncode
+                stdout = (proc.stdout or "").strip()
+                stderr = (proc.stderr or "").strip()
+                if spec["expects_json"]:
+                    try:
+                        json.loads(stdout or "{}")
+                        result["stdout_valid"] = True
+                    except Exception:
+                        result["stdout_valid"] = False
+                else:
+                    result["stdout_valid"] = proc.returncode == 0
+
+                after = _read_jsonl(invocation_path)
+                new_rows = after[before_len:]
+                before_len = len(after)
+                matching = [
+                    row for row in new_rows
+                    if str(row.get("hook", "")).lower() == spec["id"]
+                ]
+                if matching:
+                    latest = matching[-1]
+                    result["logged"] = True
+                    result["hook_status"] = str(latest.get("status") or "")
+                    if "hits" in latest:
+                        result["hits"] = latest.get("hits")
+
+                result["ok"] = (
+                    proc.returncode == 0
+                    and result["stdout_valid"]
+                    and result["logged"]
+                )
+                if result["ok"]:
+                    if result["hits"] is None:
+                        result["msg"] = f"{spec['label']} hook ran and logged {result['hook_status'] or 'ok'}."
+                    else:
+                        result["msg"] = (
+                            f"{spec['label']} hook ran and logged "
+                            f"{result['hook_status'] or 'ok'} ({result['hits']} hits)."
+                        )
+                else:
+                    details = []
+                    if proc.returncode != 0:
+                        details.append(f"exit {proc.returncode}")
+                    if not result["stdout_valid"]:
+                        details.append("invalid stdout")
+                    if not result["logged"]:
+                        details.append("no invocation log")
+                    if stderr:
+                        details.append(stderr[:160])
+                    result["msg"] = f"{spec['label']} self-test incomplete: " + ", ".join(details)
+            except Exception as e:
+                result["msg"] = f"{spec['label']} self-test failed: {e}"
+
+            results.append(result)
+
+        ok = all(item["ok"] for item in results)
+        return {
+            "ok": ok,
+            "results": results,
+            "msg": "Hook self-test passed." if ok else "Hook self-test found issues.",
+            "log_path": invocation_path,
+        }
 
     def get_collections(self):
         """List all collections with counts — uses v2 backend."""
@@ -1049,7 +1465,7 @@ class EmberAPI:
         cfg = load_config()
         try:
             import urllib.request
-            url = cfg.get("ollama_url", "").replace("/api/embeddings", "/api/tags")
+            url = normalize_ollama_url(cfg.get("ollama_url", "")).replace("/api/embeddings", "/api/tags").replace("/api/embed", "/api/tags")
             req = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read())
@@ -1068,7 +1484,7 @@ class EmberAPI:
         cfg = load_config()
         try:
             import urllib.request
-            url = cfg.get("ollama_url", "").replace("/api/embeddings", "/api/tags")
+            url = normalize_ollama_url(cfg.get("ollama_url", "")).replace("/api/embeddings", "/api/tags").replace("/api/embed", "/api/tags")
             req = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read())
@@ -1098,6 +1514,64 @@ class EmberAPI:
             return {"ok": True, "msg": f"Embedding model set to {model_name}. Restart CLIs to apply."}
         except Exception as e:
             return {"ok": False, "msg": str(e)}
+
+    def get_provider_models(self, provider, key_override=""):
+        """Return available embedding models for a provider."""
+        provider = str(provider or "").lower().strip()
+
+        if provider == "ollama":
+            return self.get_ollama_models()
+        cfg = load_config()
+        key_map = {"openai": "openai_key", "google": "google_key", "openrouter": "openrouter_key"}
+        api_key = str(key_override or "").strip() or cfg.get(key_map.get(provider, ""), "")
+        from ember_memory.core.embeddings.model_catalog import get_provider_models
+        return get_provider_models(provider, api_key)
+
+    # ── Key / connection verification ──────────────────────────────────────────
+
+    def verify_provider_auth(self, provider, key_override=""):
+        """Quickly verify a provider's API key works. Accepts optional key from UI input.
+        If key_override is provided (from the text field), uses that directly.
+        Otherwise reads from saved config."""
+        provider = str(provider or "").lower().strip()
+        key = str(key_override or "").strip()
+
+        # If no key from UI, fall back to saved config
+        if not key:
+            cfg = load_config()
+            key_map = {"openai": "openai_key", "google": "google_key", "openrouter": "openrouter_key"}
+            key = cfg.get(key_map.get(provider, ""), "")
+        if not key:
+            return {"ok": False, "msg": "No API key provided"}
+
+        if provider == "ollama":
+            return self.test_ollama()
+
+        from ember_memory.core.embeddings.model_catalog import verify_provider_auth
+        result = verify_provider_auth(provider, key)
+        if result.get("ok"):
+            result["msg"] = "✓ " + result.get("msg", "Connected")
+        else:
+            result["msg"] = "✗ " + result.get("msg", "Failed")
+        return result
+
+    def verify_model(self, provider, model):
+        """Verify a specific model exists and is accessible for the given provider."""
+        provider = str(provider or "").lower().strip()
+        model = str(model or "").strip()
+        if not model:
+            return {"ok": False, "msg": "No model specified"}
+
+        if provider == "ollama":
+            return {"ok": True, "msg": f"✓ {model}"}
+
+        from ember_memory.core.embeddings.model_catalog import verify_model
+        result = verify_model(provider, model)
+        if result.get("ok"):
+            result["msg"] = "✓ " + result.get("msg", "Ready")
+        else:
+            result["msg"] = "✗ " + result.get("msg", "Not validated")
+        return result
 
     def browse_files(self):
         """Open native file picker for individual files."""
@@ -1136,7 +1610,7 @@ class EmberAPI:
                     "tick_count": 0, "total_memories_tracked": 0,
                     "hot_memories": 0, "total_connections": 0,
                     "established_connections": 0, "heat_mode": "universal",
-                    "ignored_clis": {"claude": False, "gemini": False, "codex": False}
+                    "ignored_clis": {cli_id: False for cli_id in DASHBOARD_AI_IDS_BASE}
                 }}
             state = EngineState(db_path=db_path)
             all_heat = get_dashboard_heat(state, ai_id=ai_id)
@@ -1164,7 +1638,7 @@ class EmberAPI:
                 "heat_mode": state.get_config("heat_mode", "universal"),
                 "ignored_clis": {
                     cli_ai: state.get_config(f"heat_ignore_{cli_ai}", "false") == "true"
-                    for cli_ai in DASHBOARD_AI_IDS
+                    for cli_ai in get_all_dashboard_ai_ids(state)
                 },
             }}
         except Exception as e:
@@ -1173,11 +1647,15 @@ class EmberAPI:
     def get_last_retrieval(self, ai_id=None):
         """Get the most recent retrieval snapshot for the dashboard."""
         try:
+            from ember_memory.core.engine.state import EngineState
             cfg = load_config()
             data_dir = cfg.get("data_dir", DEFAULT_DATA_DIR)
             retrieval = read_json_file(get_last_retrieval_path(data_dir, ai_id=ai_id))
             if retrieval is None:
                 return {"ok": True, "retrieval": None}
+            db_path = os.path.join(data_dir, "engine", "engine.db")
+            if os.path.exists(db_path):
+                retrieval = _filter_retrieval_snapshot(EngineState(db_path=db_path), retrieval)
             return {"ok": True, "retrieval": retrieval}
         except Exception as e:
             return {"ok": False, "msg": str(e)}
@@ -1185,13 +1663,23 @@ class EmberAPI:
     def get_all_last_retrievals(self):
         """Get the global and per-AI retrieval snapshots for the dashboard."""
         try:
+            from ember_memory.core.engine.state import EngineState
             cfg = load_config()
             data_dir = cfg.get("data_dir", DEFAULT_DATA_DIR)
+            state = None
+            db_path = os.path.join(data_dir, "engine", "engine.db")
+            if os.path.exists(db_path):
+                state = EngineState(db_path=db_path)
             retrievals = {
                 "all": read_json_file(get_last_retrieval_path(data_dir)),
             }
-            for ai_id in DASHBOARD_AI_IDS:
+            for ai_id in get_all_dashboard_ai_ids():
                 retrievals[ai_id] = read_json_file(get_last_retrieval_path(data_dir, ai_id=ai_id))
+            if state is not None:
+                retrievals = {
+                    key: _filter_retrieval_snapshot(state, value)
+                    for key, value in retrievals.items()
+                }
             return {"ok": True, "retrievals": retrievals}
         except Exception as e:
             return {"ok": False, "msg": str(e)}
@@ -1309,6 +1797,7 @@ class EmberAPI:
                 return {"ok": True, "sessions": []}
 
             selected_filter = normalize_dashboard_ai_id(ai_filter)
+            cli_ids = get_all_dashboard_ai_ids()
             sessions = {}
             with open(log_path, "r") as f:
                 for line in f:
@@ -1323,7 +1812,7 @@ class EmberAPI:
                             continue
 
                         if selected_filter is not None:
-                            cli = _get_cli_from_session(sid)
+                            cli = _get_cli_from_session(sid, cli_ids=cli_ids)
                             if cli != selected_filter:
                                 continue
 
@@ -1412,8 +1901,13 @@ class EmberAPI:
             return {"ok": False, "msg": str(e)}
 
     def toggle_cli_ignore(self, ai_id):
-        """Toggle heat ignore for a specific CLI."""
+        """Toggle basic-RAG mode for a specific CLI.
+
+        When enabled, retrieval still works but adaptive Engine heat/scoring for
+        that CLI is paused so parallel sessions do not keep amplifying a topic.
+        """
         try:
+            from ember_memory.core.engine.heat import HeatMap
             from ember_memory.core.engine.state import EngineState
             cfg = load_config()
             db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
@@ -1421,7 +1915,7 @@ class EmberAPI:
             state = EngineState(db_path=db_path)
             current = state.get_config(f"heat_ignore_{ai_id}", "false")
             new_val = "false" if current == "true" else "true"
-            state.set_config(f"heat_ignore_{ai_id}", new_val)
+            HeatMap(state).set_ignored(ai_id, new_val == "true")
             return {"ok": True, "ignored": new_val == "true"}
         except Exception as e:
             return {"ok": False, "msg": str(e)}
@@ -1561,34 +2055,212 @@ class EmberAPI:
             return {"ok": False, "msg": str(e)}
 
 
+    def get_custom_clis(self):
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            if not os.path.exists(db_path):
+                return {"ok": True, "clis": []}
+            state = EngineState(db_path=db_path)
+            clis = _load_custom_clis(state)
+            for cli in clis:
+                cli.update(_custom_cli_setup(cli["id"]))
+            return {"ok": True, "clis": clis}
+        except Exception as e:
+            return {"ok": False, "clis": [], "msg": str(e)}
+
+    def add_custom_cli(self, cli_id, cli_name):
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            state = EngineState(db_path=db_path)
+
+            cli_id = _normalize_custom_cli_id(cli_id)
+            invalid = _validate_custom_cli_id(cli_id)
+            if invalid:
+                return {"ok": False, "msg": invalid}
+            cli_name = str(cli_name or "").strip() or cli_id
+
+            clis = _load_custom_clis(state)
+            # Check if exists
+            for c in clis:
+                if c["id"] == cli_id:
+                    return {"ok": False, "msg": f"CLI '{cli_id}' already exists"}
+            clis.append({"id": cli_id, "name": cli_name})
+            state.set_config("custom_clis", json.dumps(clis))
+
+            setup = _custom_cli_setup(cli_id)
+
+            return {
+                "ok": True,
+                "msg": f"Added {cli_name} ({cli_id})",
+                "cli_id": cli_id,
+                **setup,
+            }
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    def remove_custom_cli(self, cli_id):
+        try:
+            from ember_memory.core.engine.state import EngineState
+            cfg = load_config()
+            db_path = os.path.join(cfg.get("data_dir", DEFAULT_DATA_DIR), "engine", "engine.db")
+            if not os.path.exists(db_path):
+                return {"ok": False, "msg": "DB not found"}
+            state = EngineState(db_path=db_path)
+
+            cli_id = _normalize_custom_cli_id(cli_id)
+            clis = _load_custom_clis(state)
+            clis = [c for c in clis if c["id"] != cli_id]
+            state.set_config("custom_clis", json.dumps(clis))
+            return {"ok": True, "msg": f"Removed {cli_id}"}
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
 # ── HTML Frontend ────────────────────────────────────────────────────────────
 
-HTML = open(os.path.join(EMBER_ROOT, "ui.html"), "r").read() if os.path.exists(
-    os.path.join(EMBER_ROOT, "ui.html")) else "<html><body><h1>Missing ui.html</h1></body></html>"
+def load_controller_html():
+    """Load the controller shell and inject local CSS/JS assets."""
+    try:
+        asset_root = resources.files("ember_memory.controller_assets")
+        html = asset_root.joinpath("ui.html").read_text()
+        css = asset_root.joinpath("ui.css").read_text()
+        js = asset_root.joinpath("ui.js").read_text()
+    except Exception:
+        html_path = os.path.join(EMBER_ROOT, "ui.html")
+        css_path = os.path.join(EMBER_ROOT, "ui.css")
+        js_path = os.path.join(EMBER_ROOT, "ui.js")
+        if not os.path.exists(html_path):
+            return "<html><body><h1>Missing controller UI assets</h1></body></html>"
+        with open(html_path, "r") as f:
+            html = f.read()
+        css = ""
+        js = ""
+        if os.path.exists(css_path):
+            with open(css_path, "r") as f:
+                css = f.read()
+        if os.path.exists(js_path):
+            with open(js_path, "r") as f:
+                js = f.read()
+
+    if "{{EMBER_UI_CSS}}" not in html or "{{EMBER_UI_JS}}" not in html:
+        return "<html><body><h1>Missing ui.html</h1></body></html>"
+    return html.replace("{{EMBER_UI_CSS}}", css).replace("{{EMBER_UI_JS}}", js)
 
 
 # ── Launch ───────────────────────────────────────────────────────────────────
 
-def main():
+
+def _linux_gui_preflight():
+    """Fail early with an actionable message for common Linux Qt backend gaps."""
+    if platform.system() != "Linux":
+        return None
+
+    if os.environ.get("WAYLAND_DISPLAY") and not os.environ.get("DISPLAY"):
+        os.environ.setdefault("QT_QPA_PLATFORM", "wayland")
+        return "qt"
+
+    if os.environ.get("QT_QPA_PLATFORM"):
+        return "qt"
+
+    try:
+        import gi  # noqa: F401
+        return None
+    except Exception:
+        pass
+
+    if ctypes.util.find_library("xcb-cursor") is None:
+        print(
+            "Ember Memory needs the Qt xcb cursor system library to open the controller on Linux.\n\n"
+            "Install one of these, then launch Ember Memory again:\n"
+            "  Ubuntu/Debian: sudo apt install libxcb-cursor0\n"
+            "  Fedora:        sudo dnf install xcb-util-cursor\n"
+            "  Arch:          sudo pacman -S xcb-util-cursor\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    current_flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
+    if "--disable-gpu" not in current_flags:
+        os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (current_flags + " --disable-gpu").strip()
+    return "qt"
+
+
+def run_gui():
+    """Create and start the webview window. Returns when window is closed."""
+    gui = _linux_gui_preflight()
     try:
         import webview
     except ImportError:
         print("pywebview not installed. Run: pip install pywebview")
         sys.exit(1)
 
+    from ember_memory.desktop_integration import get_icon_path
+
     api = EmberAPI()
-    icon_path = os.path.join(EMBER_ROOT, "icons", "ember-memory.png")
+    icon_path = get_icon_path()
     window = webview.create_window(
         "Ember Memory",
-        html=HTML,
+        html=load_controller_html(),
         js_api=api,
         width=840,
         height=660,
         min_size=(700, 550),
         background_color="#050505",
-        text_select=False,
+        text_select=True,
     )
-    webview.start(debug=False, icon=icon_path)
+    start_kwargs = {"debug": False}
+    if gui:
+        start_kwargs["gui"] = gui
+    if icon_path:
+        start_kwargs["icon"] = icon_path
+    webview.start(**start_kwargs)
+
+
+def _spawn_tray_process():
+    """Launch the tray in a detached process so terminal launches can exit."""
+    env = {**os.environ, "EMBER_TRAY_PROCESS": "1"}
+    command = [sys.executable, "-m", "ember_memory", "tray"]
+    popen_kwargs = {
+        "cwd": os.path.expanduser("~"),
+        "env": env,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = (
+            getattr(subprocess, "DETACHED_PROCESS", 0)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    return subprocess.Popen(command, **popen_kwargs)
+
+
+def main():
+    """Launch the GUI controller. When window is closed, minimize to tray.
+    The tray provides quick controls and the option to reopen the GUI or quit.
+    """
+    # Show the GUI first
+    run_gui()
+
+    # If launched from an existing tray (via "Open Controller"), just exit.
+    # The original process keeps the tray alive.
+    if os.environ.get("EMBER_FROM_TRAY") == "1":
+        return
+
+    # User closed the window — keep background controls available from a
+    # detached tray process while allowing terminal launches to return.
+    try:
+        _spawn_tray_process()
+    except Exception:
+        return
 
 
 if __name__ == "__main__":

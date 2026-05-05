@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import sys
+import traceback
 
 # Suppress all logging to stderr. Codex hooks expect clean stdout.
 logging.disable(logging.CRITICAL)
@@ -26,6 +27,48 @@ def _output_continue():
     print(json.dumps({"continue": True}))
 
 
+def _log_hook_error(exc):
+    """Write hook failures locally without polluting stdout/stderr."""
+    try:
+        log_dir = os.environ.get("EMBER_DATA_DIR") or os.path.join(os.path.expanduser("~"), ".ember-memory")
+        os.makedirs(log_dir, exist_ok=True)
+        path = os.path.join(log_dir, "hook_errors.log")
+        with open(path, "a") as f:
+            f.write("[codex] hook failed\n")
+            f.write("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
+            f.write("\n")
+    except Exception:
+        pass
+
+
+def _log_hook_event(status, prompt="", hits=None, elapsed_ms=None, input_keys=None):
+    """Write local hook telemetry without polluting stdout/stderr."""
+    try:
+        from datetime import datetime, timezone
+
+        log_dir = os.environ.get("EMBER_DATA_DIR") or os.path.join(os.path.expanduser("~"), ".ember-memory")
+        os.makedirs(log_dir, exist_ok=True)
+        entry = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "hook": "codex",
+            "status": status,
+            "prompt_len": len(prompt or ""),
+            "pid": os.getpid(),
+            "ppid": os.getppid(),
+        }
+        if hits is not None:
+            entry["hits"] = hits
+        if elapsed_ms is not None:
+            entry["elapsed_ms"] = elapsed_ms
+        if input_keys:
+            entry["input_keys"] = sorted(str(key) for key in input_keys)
+        path = os.path.join(log_dir, "hook_invocations.jsonl")
+        with open(path, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass
+
+
 def _codex_session_scope(raw_session_id):
     """Normalize Codex session ids so Engine heat can aggregate by CLI."""
     value = str(raw_session_id or "").strip()
@@ -36,6 +79,55 @@ def _codex_session_scope(raw_session_id):
     return f"codex-{value}"
 
 
+def _write_activity_snapshot(config, ai_id, session_id, prompt, elapsed_ms, results):
+    """Write dashboard activity and retrieval snapshot for any hook result count."""
+    try:
+        from datetime import datetime, timezone
+
+        data_dir = os.environ.get("EMBER_DATA_DIR") or config.DATA_DIR
+        activity_path = os.path.join(data_dir, "activity.jsonl")
+        entry = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "session": session_id,
+            "ai_id": ai_id,
+            "prompt": prompt[:120],
+            "hits": len(results),
+            "top_score": round(results[0].composite_score, 3) if results else 0,
+            "collections": list(set(result.collection for result in results)),
+            "elapsed_ms": elapsed_ms,
+        }
+        os.makedirs(os.path.dirname(activity_path), exist_ok=True)
+        with open(activity_path, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+
+        snapshot = {
+            "ts": entry["ts"],
+            "prompt": prompt[:200],
+            "elapsed_ms": elapsed_ms,
+            "ai_id": ai_id,
+            "results": [
+                {
+                    "collection": result.collection,
+                    "content": result.content,
+                    "similarity": round(result.similarity, 4),
+                    "composite_score": round(result.composite_score, 4),
+                    "score_breakdown": getattr(result, "score_breakdown", {}),
+                    "id": result.id[:32],
+                }
+                for result in results
+            ],
+        }
+        for path in [
+            os.path.join(data_dir, "last_retrieval.json"),
+            os.path.join(data_dir, f"last_retrieval_{ai_id}.json"),
+            os.path.join(data_dir, f"last_retrieval_{session_id}.json"),
+        ]:
+            with open(path, "w") as f:
+                json.dump(snapshot, f, indent=2)
+    except Exception:
+        pass
+
+
 def main():
     import time
 
@@ -44,6 +136,7 @@ def main():
     try:
         raw = sys.stdin.read()
         if not raw.strip():
+            _log_hook_event("no_input", elapsed_ms=0)
             _output_continue()
             return
 
@@ -51,6 +144,12 @@ def main():
         prompt = data.get("prompt", "").strip()
 
         if not prompt or len(prompt) < 3:
+            _log_hook_event(
+                "empty_prompt",
+                prompt=prompt,
+                elapsed_ms=int((time.monotonic() - _t_start) * 1000),
+                input_keys=data.keys(),
+            )
             _output_continue()
             return
 
@@ -81,8 +180,32 @@ def main():
             similarity_threshold=config.SIMILARITY_THRESHOLD,
             engine_db_path=engine_db_path,
         )
+        fallback_used = False
+        if not results and config.SIMILARITY_THRESHOLD > 0.45:
+            results = retrieve(
+                prompt=prompt,
+                ai_id=ai_id,
+                workspace=workspace,
+                cwd=cwd,
+                session_id=session_id,
+                backend=backend,
+                embedder=embedder,
+                limit=config.MAX_HOOK_RESULTS,
+                similarity_threshold=0.45,
+                engine_db_path=engine_db_path,
+            )
+            fallback_used = bool(results)
+        elapsed_ms = int((time.monotonic() - _t_start) * 1000)
 
         if not results:
+            _write_activity_snapshot(config, ai_id, session_id, prompt, elapsed_ms, [])
+            _log_hook_event(
+                "no_results",
+                prompt=prompt,
+                hits=0,
+                elapsed_ms=elapsed_ms,
+                input_keys=data.keys(),
+            )
             _output_continue()
             return
 
@@ -109,51 +232,15 @@ def main():
             f"</{tag}>"
         )
 
-        elapsed_ms = int((time.monotonic() - _t_start) * 1000)
-        try:
-            from datetime import datetime, timezone
+        _write_activity_snapshot(config, ai_id, session_id, prompt, elapsed_ms, results)
 
-            activity_path = os.path.join(config.DATA_DIR, "activity.jsonl")
-            entry = {
-                "ts": datetime.now(timezone.utc).isoformat(),
-                "session": session_id,
-                "ai_id": ai_id,
-                "prompt": prompt[:120],
-                "hits": len(results),
-                "top_score": round(results[0].composite_score, 3) if results else 0,
-                "collections": list(set(result.collection for result in results)),
-                "elapsed_ms": elapsed_ms,
-            }
-            os.makedirs(os.path.dirname(activity_path), exist_ok=True)
-            with open(activity_path, "a") as f:
-                f.write(json.dumps(entry) + "\n")
-
-            snapshot = {
-                "ts": entry["ts"],
-                "prompt": prompt[:200],
-                "elapsed_ms": elapsed_ms,
-                "ai_id": ai_id,
-                "results": [
-                    {
-                        "collection": result.collection,
-                        "content": result.content,
-                        "similarity": round(result.similarity, 4),
-                        "composite_score": round(result.composite_score, 4),
-                        "score_breakdown": getattr(result, "score_breakdown", {}),
-                        "id": result.id[:32],
-                    }
-                    for result in results
-                ],
-            }
-            for path in [
-                os.path.join(config.DATA_DIR, "last_retrieval.json"),
-                os.path.join(config.DATA_DIR, f"last_retrieval_{ai_id}.json"),
-                os.path.join(config.DATA_DIR, f"last_retrieval_{session_id}.json"),
-            ]:
-                with open(path, "w") as f:
-                    json.dump(snapshot, f, indent=2)
-        except Exception:
-            pass
+        _log_hook_event(
+            "fallback_results" if fallback_used else "results",
+            prompt=prompt,
+            hits=len(results),
+            elapsed_ms=elapsed_ms,
+            input_keys=data.keys(),
+        )
 
         output = {
             "continue": True,
@@ -164,7 +251,9 @@ def main():
         }
         print(json.dumps(output))
 
-    except Exception:
+    except Exception as exc:
+        _log_hook_error(exc)
+        _log_hook_event("error", elapsed_ms=int((time.monotonic() - _t_start) * 1000))
         _output_continue()
 
 
