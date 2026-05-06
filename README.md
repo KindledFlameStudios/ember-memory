@@ -40,33 +40,57 @@ Install **Python 3.12** first. From the official Windows installer, enable **Add
 winget install --id Python.Python.3.12 -e
 ```
 
-Close and reopen PowerShell, then confirm Python is available:
+Close and reopen PowerShell, then confirm Python 3.12 is available:
 
 ```powershell
-py --version
+py -3.12 --version
 ```
 
+Run these commands **one at a time** in PowerShell.
+
+Create an isolated environment:
+
 ```powershell
-# 1. Create an isolated environment
-py -m venv ember-memory-env
+py -3.12 -m venv ember-memory-env
+```
+
+Activate it:
+
+```powershell
 .\ember-memory-env\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-
-# 2. Install Ember Memory from GitHub
-python -m pip install https://github.com/KindledFlameStudios/ember-memory/archive/refs/heads/main.zip
-
-# 3. Pull a local embedding model (free, private)
-ollama pull bge-m3
-
-# 4. Open the app
-ember-memory
-
-# 5. Optional: add Ember Memory to your Start Menu
-ember-memory install-desktop
-
-# 6. In the app: CLI Status -> Run Install, then Test Hooks
-# 7. Restart your CLI - done
 ```
+
+Update pip:
+
+```powershell
+python -m pip install --upgrade pip
+```
+
+Install Ember Memory from GitHub:
+
+```powershell
+python -m pip install https://github.com/KindledFlameStudios/ember-memory/archive/refs/heads/main.zip
+```
+
+Pull a local embedding model (free, private):
+
+```powershell
+ollama pull bge-m3
+```
+
+Open the app:
+
+```powershell
+ember-memory
+```
+
+Optional: add Ember Memory to your Start Menu:
+
+```powershell
+ember-memory install-desktop
+```
+
+In the app, open **CLI Status**, click **Run Install**, then **Test Hooks**. Restart your CLI after the hook test passes.
 
 If PowerShell blocks activation, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, open a new PowerShell window, and try the activate command again.
 
