@@ -361,6 +361,37 @@ def test_spawn_tray_process_detaches_from_terminal(monkeypatch):
         assert captured["kwargs"]["start_new_session"] is True
 
 
+def test_controller_main_exits_when_instance_lock_is_held(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(controller_app, "run_gui", lambda: calls.append("run_gui"))
+    monkeypatch.setattr(
+        "ember_memory.single_instance.acquire_instance_lock",
+        lambda name: None,
+    )
+
+    controller_app.main()
+
+    assert calls == []
+
+
+def test_controller_main_closes_instance_lock(monkeypatch):
+    calls = []
+    lock = DummyLock()
+
+    monkeypatch.setattr(controller_app, "run_gui", lambda: calls.append("run_gui"))
+    monkeypatch.setattr(controller_app, "_spawn_tray_process", lambda: calls.append("tray"))
+    monkeypatch.setattr(
+        "ember_memory.single_instance.acquire_instance_lock",
+        lambda name: lock,
+    )
+
+    controller_app.main()
+
+    assert calls == ["run_gui", "tray"]
+    assert lock.closed is True
+
+
 def test_get_cli_from_session_maps_legacy_codex_uuid():
     assert controller_app._get_cli_from_session("019d543a-d11f-7421-b007-db86f14bd1a9") == "codex"
     assert controller_app._get_cli_from_session("codex-thread-123") == "codex"
@@ -567,6 +598,14 @@ class DummyLog:
 
     def flush(self):
         return None
+
+    def close(self):
+        self.closed = True
+
+
+class DummyLock:
+    def __init__(self):
+        self.closed = False
 
     def close(self):
         self.closed = True

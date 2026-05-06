@@ -2274,20 +2274,29 @@ def main():
     """Launch the GUI controller. When window is closed, minimize to tray.
     The tray provides quick controls and the option to reopen the GUI or quit.
     """
-    # Show the GUI first
-    run_gui()
+    from ember_memory.single_instance import acquire_instance_lock
 
-    # If launched from an existing tray (via "Open Controller"), just exit.
-    # The original process keeps the tray alive.
-    if os.environ.get("EMBER_FROM_TRAY") == "1":
+    lock = acquire_instance_lock("controller")
+    if lock is None:
+        print("Ember Memory controller is already running.")
         return
-
-    # User closed the window — keep background controls available from a
-    # detached tray process while allowing terminal launches to return.
     try:
-        _spawn_tray_process()
-    except Exception:
-        return
+        # Show the GUI first
+        run_gui()
+
+        # If launched from an existing tray (via "Open Controller"), just exit.
+        # The original process keeps the tray alive.
+        if os.environ.get("EMBER_FROM_TRAY") == "1":
+            return
+
+        # User closed the window — keep background controls available from a
+        # detached tray process while allowing terminal launches to return.
+        try:
+            _spawn_tray_process()
+        except Exception:
+            return
+    finally:
+        lock.close()
 
 
 if __name__ == "__main__":
