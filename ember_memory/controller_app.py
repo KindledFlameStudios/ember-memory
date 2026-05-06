@@ -2124,27 +2124,39 @@ class EmberAPI:
 
 def load_controller_html():
     """Load the controller shell and inject local CSS/JS assets."""
+    errors = []
     try:
         asset_root = resources.files("ember_memory.controller_assets")
         html = asset_root.joinpath("ui.html").read_text()
         css = asset_root.joinpath("ui.css").read_text()
         js = asset_root.joinpath("ui.js").read_text()
-    except Exception:
-        html_path = os.path.join(EMBER_ROOT, "ui.html")
-        css_path = os.path.join(EMBER_ROOT, "ui.css")
-        js_path = os.path.join(EMBER_ROOT, "ui.js")
-        if not os.path.exists(html_path):
-            return "<html><body><h1>Missing controller UI assets</h1></body></html>"
-        with open(html_path, "r") as f:
-            html = f.read()
-        css = ""
-        js = ""
-        if os.path.exists(css_path):
-            with open(css_path, "r") as f:
-                css = f.read()
-        if os.path.exists(js_path):
-            with open(js_path, "r") as f:
-                js = f.read()
+    except Exception as exc:
+        errors.append(f"importlib.resources: {exc}")
+        fallback_roots = [
+            os.path.join(os.path.dirname(__file__), "controller_assets"),
+            EMBER_ROOT,
+        ]
+        for root in fallback_roots:
+            html_path = os.path.join(root, "ui.html")
+            css_path = os.path.join(root, "ui.css")
+            js_path = os.path.join(root, "ui.js")
+            if not os.path.exists(html_path):
+                errors.append(f"missing {html_path}")
+                continue
+            with open(html_path, "r", encoding="utf-8") as f:
+                html = f.read()
+            css = ""
+            js = ""
+            if os.path.exists(css_path):
+                with open(css_path, "r", encoding="utf-8") as f:
+                    css = f.read()
+            if os.path.exists(js_path):
+                with open(js_path, "r", encoding="utf-8") as f:
+                    js = f.read()
+            break
+        else:
+            details = "<br>".join(errors)
+            return f"<html><body><h1>Missing controller UI assets</h1><p>{details}</p></body></html>"
 
     if "{{EMBER_UI_CSS}}" not in html or "{{EMBER_UI_JS}}" not in html:
         return "<html><body><h1>Missing ui.html</h1></body></html>"

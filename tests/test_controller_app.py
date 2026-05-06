@@ -538,6 +538,26 @@ def test_load_controller_html_injects_packaged_assets():
     assert ".shell" in html
 
 
+def test_load_controller_html_falls_back_to_installed_asset_dir(monkeypatch, tmp_path):
+    asset_dir = tmp_path / "controller_assets"
+    asset_dir.mkdir()
+    (asset_dir / "ui.html").write_text(
+        "<html><style>{{EMBER_UI_CSS}}</style><script>{{EMBER_UI_JS}}</script></html>",
+        encoding="utf-8",
+    )
+    (asset_dir / "ui.css").write_text(".fallback { color: orange; }", encoding="utf-8")
+    (asset_dir / "ui.js").write_text("window.fallback = true;", encoding="utf-8")
+
+    monkeypatch.setattr(controller_app.resources, "files", lambda package: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(controller_app, "__file__", str(tmp_path / "controller_app.py"))
+
+    html = controller_app.load_controller_html()
+
+    assert "Missing controller UI assets" not in html
+    assert ".fallback" in html
+    assert "window.fallback = true" in html
+
+
 class DummyLog:
     def __init__(self):
         self.closed = False
