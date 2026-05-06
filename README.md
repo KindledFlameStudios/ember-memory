@@ -44,6 +44,14 @@ winget install --id CondaForge.Miniforge3 -e
 
 Close and reopen PowerShell. If `conda` is not recognized, open **Miniforge Prompt** from the Start Menu.
 
+If you are using plain Command Prompt and want to stay there, initialize Miniforge for that terminal first:
+
+```bat
+%USERPROFILE%\miniforge3\Scripts\activate.bat
+```
+
+After that, `conda` should work in the same terminal window.
+
 Run these commands **one at a time**.
 
 Create and activate the environment:
