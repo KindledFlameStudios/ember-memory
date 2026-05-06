@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import controller.tray as tray
+from PIL import Image
 
 
 class FakeProcess:
@@ -69,3 +70,17 @@ def test_terminate_controller_processes_closes_tracked_controllers():
     assert proc.waited is True
     assert proc.killed is False
     assert tray._controller_processes == []
+
+
+def test_create_icon_image_prefers_packaged_asset(monkeypatch, tmp_path):
+    asset_dir = tmp_path / "assets"
+    asset_dir.mkdir()
+    source = asset_dir / "ember-memory.png"
+    Image.new("RGBA", (32, 32), (12, 34, 56, 255)).save(source)
+
+    monkeypatch.setattr(tray.resources, "files", lambda package: asset_dir)
+
+    image = tray.create_icon_image()
+
+    assert image.size == (32, 32)
+    assert image.getpixel((0, 0)) == (12, 34, 56, 255)

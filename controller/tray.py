@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import threading
+from importlib import resources
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -19,8 +20,22 @@ _controller_processes = []
 
 
 def create_icon_image():
-    """Generate a simple ember-colored icon."""
+    """Load the packaged tray icon, falling back to a simple generated mark."""
     from PIL import Image, ImageDraw
+
+    try:
+        with resources.as_file(resources.files("ember_memory.assets").joinpath("ember-memory.png")) as path:
+            if path.exists():
+                return Image.open(path).convert("RGBA")
+    except Exception:
+        fallback = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "icons",
+            "ember-memory.png",
+        )
+        if os.path.exists(fallback):
+            return Image.open(fallback).convert("RGBA")
+
     size = 64
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
