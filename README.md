@@ -34,6 +34,18 @@ Unlike other memory tools (Mem0, Zep, LangMem) that are cloud-first SDKs for bui
 
 ### Windows without Git
 
+Install **Python 3.12** first. From the official Windows installer, enable **Add python.exe to PATH**. Or install with winget:
+
+```powershell
+winget install --id Python.Python.3.12 -e
+```
+
+Close and reopen PowerShell, then confirm Python is available:
+
+```powershell
+py --version
+```
+
 ```powershell
 # 1. Create an isolated environment
 py -m venv ember-memory-env
@@ -57,6 +69,8 @@ ember-memory install-desktop
 ```
 
 If PowerShell blocks activation, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, open a new PowerShell window, and try the activate command again.
+
+Prefer conda? Create the environment with `conda create -n ember-memory python=3.12`, activate it, then run the same `python -m pip install ...` command above.
 
 ### Developer Install
 
@@ -97,7 +111,7 @@ Closing the controller keeps Ember Memory available from the system tray by defa
 
 ### Requirements
 
-- **Python 3.10+**
+- **Python 3.10+**. Python 3.12 is the recommended Windows install target for this release.
 - **Ollama** (for local embeddings) — or use OpenAI, Google, or OpenRouter cloud embeddings instead
 
 ### Desktop App Launcher
