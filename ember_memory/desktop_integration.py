@@ -49,7 +49,34 @@ def _asset_icon_path() -> Path | None:
         return fallback if fallback.exists() else None
 
 
+def _windows_icon_path() -> Path | None:
+    source = _asset_icon_path()
+    if not source or not source.exists():
+        return None
+
+    target = Path.home() / ".ember-memory" / "ember-memory.ico"
+    try:
+        if target.exists() and target.stat().st_mtime >= source.stat().st_mtime:
+            return target
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        from PIL import Image
+
+        with Image.open(source) as img:
+            img.save(
+                target,
+                format="ICO",
+                sizes=[(256, 256), (64, 64), (48, 48), (32, 32), (16, 16)],
+            )
+        return target
+    except Exception:
+        return None
+
+
 def get_icon_path() -> str:
+    if platform.system() == "Windows":
+        path = _windows_icon_path()
+        return str(path) if path else ""
     path = _asset_icon_path()
     return str(path) if path else ""
 
