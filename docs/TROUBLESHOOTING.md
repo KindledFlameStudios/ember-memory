@@ -11,8 +11,11 @@
 **Error:** `Ollama: Not installed — ollama.com`
 
 **Solution:**
-1. Download from [ollama.com](https://ollama.com)
-2. Install and start the service:
+1. Download from [ollama.com](https://ollama.com), or on Windows run:
+   ```powershell
+   winget install -e --id Ollama.Ollama
+   ```
+2. Install and start the service if it is not already running:
    ```bash
    # Linux
    ollama serve &
@@ -27,6 +30,25 @@
    ```bash
    ollama pull bge-m3
    ```
+
+Ollama is only required for the local default embedding path. You can use OpenAI, Google, or OpenRouter embeddings instead by adding the provider key in the controller Settings tab.
+
+### App Does Not Open
+
+**Symptom:** `ember-memory` flashes or returns immediately, but no window appears.
+
+**Solution:**
+Run the controller in the foreground so Windows can show the error:
+
+```bash
+ember-memory controller
+```
+
+Detached launch errors are also written to:
+
+```text
+~/.ember-memory/controller_launch.log
+```
 
 ### Model Not Found
 

@@ -2220,16 +2220,28 @@ def run_gui():
     webview.start(**start_kwargs)
 
 
+def _open_launch_log(name):
+    """Open a local launch log for detached tray startup diagnostics."""
+    log_dir = os.path.join(os.path.expanduser("~"), ".ember-memory")
+    os.makedirs(log_dir, exist_ok=True)
+    path = os.path.join(log_dir, name)
+    handle = open(path, "a", encoding="utf-8")
+    handle.write(f"\n--- {datetime.now().isoformat(timespec='seconds')} ---\n")
+    handle.flush()
+    return handle
+
+
 def _spawn_tray_process():
     """Launch the tray in a detached process so terminal launches can exit."""
     env = {**os.environ, "EMBER_TRAY_PROCESS": "1"}
     command = [sys.executable, "-m", "ember_memory", "tray"]
+    log_handle = _open_launch_log("tray_launch.log")
     popen_kwargs = {
         "cwd": os.path.expanduser("~"),
         "env": env,
         "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
+        "stdout": log_handle,
+        "stderr": log_handle,
     }
     if os.name == "nt":
         popen_kwargs["creationflags"] = (
@@ -2240,7 +2252,10 @@ def _spawn_tray_process():
     else:
         popen_kwargs["start_new_session"] = True
 
-    return subprocess.Popen(command, **popen_kwargs)
+    try:
+        return subprocess.Popen(command, **popen_kwargs)
+    finally:
+        log_handle.close()
 
 
 def main():

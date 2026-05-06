@@ -78,6 +78,14 @@ Pull a local embedding model (free, private):
 ollama pull bge-m3
 ```
 
+If `ollama` is not recognized, install Ollama first:
+
+```powershell
+winget install -e --id Ollama.Ollama
+```
+
+You can also skip Ollama and use OpenAI, Google, or OpenRouter embeddings from the app's Settings tab.
+
 Open the app:
 
 ```powershell
@@ -135,13 +143,13 @@ ember-memory install-desktop
 
 The controller detects your CLIs, configures the hooks, and shows your live memory dashboard. Open the CLI Status tab, click **Run Install**, then **Test Hooks** to verify Claude Code, Gemini CLI, and Codex plumbing before you restart your CLIs.
 
-> **Need Ollama?** Install from [ollama.com](https://ollama.com). Once it's running, `ollama pull bge-m3` is the only setup step.
+> **Need Ollama?** Install from [ollama.com](https://ollama.com) or run `winget install -e --id Ollama.Ollama` on Windows. Once it's running, `ollama pull bge-m3` is the only setup step. You can skip Ollama if you configure OpenAI, Google, or OpenRouter embeddings in Settings.
 
 > **Install isolation matters.** Ember Memory ships a real local vector database stack. Use a venv, pipx, or a dedicated conda environment instead of installing into your base Python environment.
 
 > **Linux GUI backend.** Isolated pip installs use Qt through `pywebview[qt]`, so the controller can launch without system Python GTK bindings. On Ubuntu/Debian, Qt may also need `sudo apt install libxcb-cursor0`.
 
-`ember-memory` launches the app and returns your terminal immediately. If you want foreground logs for troubleshooting, use `ember-memory controller`.
+`ember-memory` launches the app and returns your terminal immediately. If no window appears, run `ember-memory controller` to launch in the foreground and see the error. Detached launch errors are also written to `~/.ember-memory/controller_launch.log`.
 
 Closing the controller keeps Ember Memory available from the system tray by default. Use the tray menu to reopen the controller or quit the app.
 

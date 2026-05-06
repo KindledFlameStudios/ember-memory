@@ -3,20 +3,33 @@
 import os
 import subprocess
 import sys
+from datetime import datetime
 
 EMBER_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _open_launch_log(name):
+    """Open a local launch log for detached app startup diagnostics."""
+    log_dir = os.path.join(os.path.expanduser("~"), ".ember-memory")
+    os.makedirs(log_dir, exist_ok=True)
+    path = os.path.join(log_dir, name)
+    handle = open(path, "a", encoding="utf-8")
+    handle.write(f"\n--- {datetime.now().isoformat(timespec='seconds')} ---\n")
+    handle.flush()
+    return handle
 
 
 def launch_app_detached():
     """Launch the controller as a detached app process and return immediately."""
     env = {**os.environ, "EMBER_APP_LAUNCHER": "1"}
     command = [sys.executable, "-m", "ember_memory", "controller"]
+    log_handle = _open_launch_log("controller_launch.log")
     popen_kwargs = {
         "cwd": os.path.expanduser("~"),
         "env": env,
         "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
+        "stdout": log_handle,
+        "stderr": log_handle,
     }
     if os.name == "nt":
         popen_kwargs["creationflags"] = (
@@ -27,7 +40,10 @@ def launch_app_detached():
     else:
         popen_kwargs["start_new_session"] = True
 
-    return subprocess.Popen(command, **popen_kwargs)
+    try:
+        return subprocess.Popen(command, **popen_kwargs)
+    finally:
+        log_handle.close()
 
 
 def launch_controller():

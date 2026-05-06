@@ -7,6 +7,7 @@ import ember_memory.__main__ as entrypoint
 
 def test_launch_app_detached_returns_immediately(monkeypatch):
     captured = {}
+    log = DummyLog()
 
     def fake_popen(command, **kwargs):
         captured["command"] = command
@@ -15,6 +16,7 @@ def test_launch_app_detached_returns_immediately(monkeypatch):
 
     monkeypatch.setattr(entrypoint.sys, "executable", "/tmp/ember-env/bin/python")
     monkeypatch.setattr(entrypoint.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(entrypoint, "_open_launch_log", lambda name: log)
 
     entrypoint.launch_app_detached()
 
@@ -22,8 +24,9 @@ def test_launch_app_detached_returns_immediately(monkeypatch):
     assert captured["kwargs"]["cwd"] == str(Path.home())
     assert captured["kwargs"]["env"]["EMBER_APP_LAUNCHER"] == "1"
     assert captured["kwargs"]["stdin"] is entrypoint.subprocess.DEVNULL
-    assert captured["kwargs"]["stdout"] is entrypoint.subprocess.DEVNULL
-    assert captured["kwargs"]["stderr"] is entrypoint.subprocess.DEVNULL
+    assert captured["kwargs"]["stdout"] is log
+    assert captured["kwargs"]["stderr"] is log
+    assert log.closed is True
     if entrypoint.os.name == "nt":
         assert "creationflags" in captured["kwargs"]
     else:
@@ -50,3 +53,17 @@ def test_controller_command_uses_foreground_controller(monkeypatch):
     entrypoint.main()
 
     assert calls == ["controller"]
+
+
+class DummyLog:
+    def __init__(self):
+        self.closed = False
+
+    def write(self, value):
+        return len(value)
+
+    def flush(self):
+        return None
+
+    def close(self):
+        self.closed = True

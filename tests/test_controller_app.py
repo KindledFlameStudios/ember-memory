@@ -335,6 +335,7 @@ def test_check_integration_reports_codex_mcp(monkeypatch, tmp_path):
 
 def test_spawn_tray_process_detaches_from_terminal(monkeypatch):
     captured = {}
+    log = DummyLog()
 
     def fake_popen(command, **kwargs):
         captured["command"] = command
@@ -343,6 +344,7 @@ def test_spawn_tray_process_detaches_from_terminal(monkeypatch):
 
     monkeypatch.setattr(controller_app.sys, "executable", "/tmp/ember-env/bin/python")
     monkeypatch.setattr(controller_app.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(controller_app, "_open_launch_log", lambda name: log)
 
     controller_app._spawn_tray_process()
 
@@ -350,8 +352,9 @@ def test_spawn_tray_process_detaches_from_terminal(monkeypatch):
     assert captured["kwargs"]["cwd"] == str(Path.home())
     assert captured["kwargs"]["env"]["EMBER_TRAY_PROCESS"] == "1"
     assert captured["kwargs"]["stdin"] is controller_app.subprocess.DEVNULL
-    assert captured["kwargs"]["stdout"] is controller_app.subprocess.DEVNULL
-    assert captured["kwargs"]["stderr"] is controller_app.subprocess.DEVNULL
+    assert captured["kwargs"]["stdout"] is log
+    assert captured["kwargs"]["stderr"] is log
+    assert log.closed is True
     if controller_app.os.name == "nt":
         assert "creationflags" in captured["kwargs"]
     else:
@@ -533,3 +536,17 @@ def test_load_controller_html_injects_packaged_assets():
     assert "{{EMBER_UI_JS}}" not in html
     assert "EMBER MEMORY CONTROLLER v2" in html
     assert ".shell" in html
+
+
+class DummyLog:
+    def __init__(self):
+        self.closed = False
+
+    def write(self, value):
+        return len(value)
+
+    def flush(self):
+        return None
+
+    def close(self):
+        self.closed = True
