@@ -504,7 +504,16 @@ def create_tray():
 
 
 def main():
-    create_tray()
+    from ember_memory.single_instance import acquire_instance_lock
+
+    lock = acquire_instance_lock("tray")
+    if lock is None:
+        print("Ember Memory tray is already running.")
+        return
+    try:
+        create_tray()
+    finally:
+        lock.close()
 
 
 if __name__ == "__main__":

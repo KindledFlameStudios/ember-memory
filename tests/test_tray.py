@@ -84,3 +84,41 @@ def test_create_icon_image_prefers_packaged_asset(monkeypatch, tmp_path):
 
     assert image.size == (32, 32)
     assert image.getpixel((0, 0)) == (12, 34, 56, 255)
+
+
+def test_tray_main_exits_when_instance_lock_is_held(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(tray, "create_tray", lambda: calls.append("create_tray"))
+    monkeypatch.setattr(
+        "ember_memory.single_instance.acquire_instance_lock",
+        lambda name: None,
+    )
+
+    tray.main()
+
+    assert calls == []
+
+
+def test_tray_main_closes_instance_lock(monkeypatch):
+    calls = []
+    lock = DummyLock()
+
+    monkeypatch.setattr(tray, "create_tray", lambda: calls.append("create_tray"))
+    monkeypatch.setattr(
+        "ember_memory.single_instance.acquire_instance_lock",
+        lambda name: lock,
+    )
+
+    tray.main()
+
+    assert calls == ["create_tray"]
+    assert lock.closed is True
+
+
+class DummyLock:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
