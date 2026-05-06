@@ -57,7 +57,7 @@ Run these commands **one at a time**.
 Create and activate the environment:
 
 ```powershell
-conda create -n ember-memory python=3.12
+conda create -n ember-memory python=3.12 pip
 ```
 
 ```powershell
@@ -70,7 +70,7 @@ Install Ember Memory from GitHub:
 python -m pip install https://github.com/KindledFlameStudios/ember-memory/archive/refs/heads/main.zip
 ```
 
-If pip itself reports that it is missing or too old, run `python -m ensurepip --upgrade` and retry the install command.
+If pip itself reports that it is missing, run `conda install pip` inside the active `ember-memory` environment and retry the install command.
 
 Pull a local embedding model (free, private):
 
