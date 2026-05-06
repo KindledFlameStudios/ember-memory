@@ -64,17 +64,13 @@ conda create -n ember-memory python=3.12
 conda activate ember-memory
 ```
 
-Update pip:
-
-```powershell
-python -m pip install --upgrade pip
-```
-
 Install Ember Memory from GitHub:
 
 ```powershell
 python -m pip install https://github.com/KindledFlameStudios/ember-memory/archive/refs/heads/main.zip
 ```
+
+If pip itself reports that it is missing or too old, run `python -m ensurepip --upgrade` and retry the install command.
 
 Pull a local embedding model (free, private):
 
@@ -106,7 +102,7 @@ py -3.12 -m venv ember-memory-env
 .\ember-memory-env\Scripts\Activate.ps1
 ```
 
-Then continue from `python -m pip install --upgrade pip`.
+Then continue from the `python -m pip install ...` command.
 
 If PowerShell blocks venv activation, run this once, open a new PowerShell window, and try activation again:
 
