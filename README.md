@@ -32,6 +32,34 @@ Unlike other memory tools (Mem0, Zep, LangMem) that are cloud-first SDKs for bui
 
 ## Quick Start
 
+### Windows without Git
+
+```powershell
+# 1. Create an isolated environment
+py -m venv ember-memory-env
+.\ember-memory-env\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+
+# 2. Install Ember Memory from GitHub
+python -m pip install https://github.com/KindledFlameStudios/ember-memory/archive/refs/heads/main.zip
+
+# 3. Pull a local embedding model (free, private)
+ollama pull bge-m3
+
+# 4. Open the app
+ember-memory
+
+# 5. Optional: add Ember Memory to your Start Menu
+ember-memory install-desktop
+
+# 6. In the app: CLI Status -> Run Install, then Test Hooks
+# 7. Restart your CLI - done
+```
+
+If PowerShell blocks activation, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, open a new PowerShell window, and try the activate command again.
+
+### Developer Install
+
 ```bash
 # 1. Clone and install in an isolated environment
 git clone https://github.com/KindledFlameStudios/ember-memory.git
