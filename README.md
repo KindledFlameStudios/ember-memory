@@ -34,30 +34,26 @@ Unlike other memory tools (Mem0, Zep, LangMem) that are cloud-first SDKs for bui
 
 ### Windows without Git
 
-Install **Python 3.12** first. From the official Windows installer, enable **Add python.exe to PATH**. Or install with winget:
+Use a Python 3.12 environment for this release. You do **not** need to downgrade your global Python if Windows already has a newer version installed.
+
+Recommended clean Windows path: install Miniforge, which can create an isolated Python 3.12 environment for Ember Memory.
 
 ```powershell
-winget install --id Python.Python.3.12 -e
+winget install --id CondaForge.Miniforge3 -e
 ```
 
-Close and reopen PowerShell, then confirm Python 3.12 is available:
+Close and reopen PowerShell. If `conda` is not recognized, open **Miniforge Prompt** from the Start Menu.
+
+Run these commands **one at a time**.
+
+Create and activate the environment:
 
 ```powershell
-py -3.12 --version
+conda create -n ember-memory python=3.12
 ```
 
-Run these commands **one at a time** in PowerShell.
-
-Create an isolated environment:
-
 ```powershell
-py -3.12 -m venv ember-memory-env
-```
-
-Activate it:
-
-```powershell
-.\ember-memory-env\Scripts\Activate.ps1
+conda activate ember-memory
 ```
 
 Update pip:
@@ -92,9 +88,23 @@ ember-memory install-desktop
 
 In the app, open **CLI Status**, click **Run Install**, then **Test Hooks**. Restart your CLI after the hook test passes.
 
-If PowerShell blocks activation, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, open a new PowerShell window, and try the activate command again.
+Already have Python 3.12 available through the Windows Python launcher? You can use venv instead:
 
-Prefer conda? Create the environment with `conda create -n ember-memory python=3.12`, activate it, then run the same `python -m pip install ...` command above.
+```powershell
+py -3.12 -m venv ember-memory-env
+```
+
+```powershell
+.\ember-memory-env\Scripts\Activate.ps1
+```
+
+Then continue from `python -m pip install --upgrade pip`.
+
+If PowerShell blocks venv activation, run this once, open a new PowerShell window, and try activation again:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
 
 ### Developer Install
 
