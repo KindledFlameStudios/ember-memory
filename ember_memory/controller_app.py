@@ -409,6 +409,29 @@ def _upsert_toml_key(text, table_name, key, value_literal):
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _remove_toml_key(text, table_name, key):
+    """Remove one key from a TOML table while preserving unrelated entries."""
+    lines = text.splitlines()
+    header_re = re.compile(r"^\[([^\]]+)\]\s*$")
+    key_re = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    headers = []
+    for idx, line in enumerate(lines):
+        match = header_re.match(line.strip())
+        if match:
+            headers.append((match.group(1), idx))
+
+    for pos, (name, start_idx) in enumerate(headers):
+        if name != table_name:
+            continue
+        end_idx = headers[pos + 1][1] if pos + 1 < len(headers) else len(lines)
+        body = lines[start_idx + 1:end_idx]
+        new_body = [line for line in body if not key_re.match(line)]
+        new_lines = lines[:start_idx + 1] + new_body + lines[end_idx:]
+        return "\n".join(new_lines).rstrip() + "\n"
+
+    return text
+
+
 def _load_toml(path):
     if not os.path.exists(path):
         return {}
@@ -423,7 +446,8 @@ def _codex_mcp_configured():
 
 def _codex_hooks_feature_enabled():
     config_data = _load_toml(CODEX_CONFIG)
-    return bool(config_data.get("features", {}).get("codex_hooks"))
+    features = config_data.get("features", {})
+    return bool(features.get("hooks") or features.get("codex_hooks"))
 
 
 def _codex_hook_script_path():
@@ -506,7 +530,8 @@ def _write_codex_config(data_dir):
             f"EMBER_DATA_DIR = {_toml_quote(data_dir)}",
         ],
     )
-    config_text = _upsert_toml_key(config_text, "features", "codex_hooks", "true")
+    config_text = _upsert_toml_key(config_text, "features", "hooks", "true")
+    config_text = _remove_toml_key(config_text, "features", "codex_hooks")
 
     with open(CODEX_CONFIG, "w") as f:
         f.write(config_text)

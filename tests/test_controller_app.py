@@ -82,7 +82,24 @@ def test_write_codex_config_writes_expected_mcp_server(monkeypatch, tmp_path):
         "EMBER_AI_ID": "codex",
         "EMBER_DATA_DIR": str(data_dir),
     }
-    assert config["features"]["codex_hooks"] is True
+    assert config["features"]["hooks"] is True
+    assert "codex_hooks" not in config["features"]
+
+
+def test_write_codex_config_migrates_deprecated_codex_hooks_feature(monkeypatch, tmp_path):
+    data_dir = _patch_paths(monkeypatch, tmp_path)
+    config_path = Path(controller_app.CODEX_CONFIG)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text("[features]\ncodex_hooks = true\nexperimental = true\n")
+
+    controller_app._write_codex_config(str(data_dir))
+
+    with open(controller_app.CODEX_CONFIG, "rb") as f:
+        config = tomllib.load(f)
+
+    assert config["features"]["hooks"] is True
+    assert config["features"]["experimental"] is True
+    assert "codex_hooks" not in config["features"]
 
 
 def test_write_codex_hooks_writes_user_prompt_submit_handler(monkeypatch, tmp_path):
@@ -145,7 +162,8 @@ def test_run_install_wires_codex_when_binary_exists(monkeypatch, tmp_path):
         config = tomllib.load(f)
 
     assert config["mcp_servers"]["ember-memory"]["env"]["EMBER_DATA_DIR"] == str(data_dir)
-    assert config["features"]["codex_hooks"] is True
+    assert config["features"]["hooks"] is True
+    assert "codex_hooks" not in config["features"]
 
     with open(controller_app.CODEX_HOOKS, "r") as f:
         hooks = json.load(f)

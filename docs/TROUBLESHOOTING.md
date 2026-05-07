@@ -163,8 +163,9 @@ Add to `~/.claude/settings.json`:
 **Solution:**
 1. Check `~/.codex/config.toml` exists
 2. Check `~/.codex/hooks.json` is properly formatted
-3. Ensure the `hooks` feature is enabled in Codex
-4. Run **CLI Status -> Run Install**, then **Test Hooks**
+3. Ensure `~/.codex/config.toml` has `[features] hooks = true`
+4. If Codex asks you to review/trust hook execution, approve trust for workspaces where you want automatic retrieval
+5. Run **CLI Status -> Run Install**, then **Test Hooks**
 
 **Manual fix:**
 Add to `~/.codex/hooks.json`:

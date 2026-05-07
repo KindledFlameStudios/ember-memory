@@ -50,7 +50,7 @@ EMBER_DATA_DIR = "~/.ember-memory"
 EMBER_AI_ID = "codex"
 
 [features]
-codex_hooks = true
+hooks = true
 ```
 
 Add `~/.codex/hooks.json`:

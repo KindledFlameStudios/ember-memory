@@ -143,6 +143,8 @@ ember-memory install-desktop
 
 The controller detects your CLIs, configures the hooks, and shows your live memory dashboard. Open the CLI Status tab, click **Run Install**, then **Test Hooks** to verify Claude Code, Gemini CLI, and Codex plumbing before you restart your CLIs.
 
+> **Codex trust prompt.** Codex may ask you to review/trust hook execution after install. That is expected: Ember Memory installs a local hook command, and Codex requires the user to approve trusted workspace behavior. Choose the trust option for workspaces where you want automatic retrieval.
+
 > **Need Ollama?** Install from [ollama.com](https://ollama.com) or run `winget install -e --id Ollama.Ollama` on Windows. Once it's running, `ollama pull bge-m3` is the only setup step. You can skip Ollama if you configure OpenAI, Google, or OpenRouter embeddings in Settings.
 
 > **Install isolation matters.** Ember Memory ships a real local vector database stack. Use a venv, pipx, or a dedicated conda environment instead of installing into your base Python environment.

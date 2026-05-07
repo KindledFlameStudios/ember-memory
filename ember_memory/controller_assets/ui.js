@@ -3672,7 +3672,7 @@ document.getElementById('btnInstallAll').addEventListener('click', function() {
     if (r && r.ok) {
       if (resultEl) {
         resultEl.className = 'install-result ok';
-        resultEl.textContent = r.msg || 'Install complete. Restart your CLIs to activate hooks.';
+        resultEl.textContent = r.msg || 'Install complete. Restart your CLIs to activate hooks. Codex may ask you to review/trust hook execution once.';
       }
       showToast((r.msg) || 'Install complete', 'ok');
       loadCLIStatus();
