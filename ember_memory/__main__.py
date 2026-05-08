@@ -89,7 +89,7 @@ def print_uninstall_result(delete_data=False):
     print("Desktop launcher cleanup complete.")
     print()
     print("To remove the installed Python package, run:")
-    print(f"  {sys.executable} -m pip uninstall ember-memory")
+    print(f"  {sys.executable} -m pip uninstall -y ember-memory")
 
     data_dir = Path.home() / ".ember-memory"
     if delete_data:

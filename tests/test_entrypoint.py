@@ -82,7 +82,7 @@ def test_uninstall_command_removes_launcher_and_preserves_data_by_default(monkey
     assert removed == ["launcher"]
     assert data_dir.exists()
     assert "formatted-result" in output
-    assert "/tmp/ember-env/bin/python -m pip uninstall ember-memory" in output
+    assert "/tmp/ember-env/bin/python -m pip uninstall -y ember-memory" in output
     assert "Local memories and settings are preserved" in output
 
 
