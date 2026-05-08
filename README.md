@@ -477,12 +477,16 @@ A flame that persists. Memory that carries forward.
 ## Uninstall
 
 ```bash
-ember-memory uninstall-desktop  # optional: removes app launcher / Start Menu shortcut
+ember-memory uninstall          # removes launcher and prints package/data cleanup steps
 pip uninstall ember-memory
 rm -rf ~/.ember-memory    # optional: removes all stored memories
 ```
 
-That's it. No lingering services, no background daemons, no config file cleanup needed.
+`ember-memory uninstall-desktop` only removes the app launcher / Start Menu shortcut. It does not remove the installed Python package or your memory data.
+
+`ember-memory uninstall` is the safer cleanup helper: it removes the launcher, preserves your memory data by default, and shows the exact package uninstall command for your environment. Use `ember-memory uninstall --delete-data` if you also want to remove `~/.ember-memory`.
+
+That's it. No lingering services or background daemons.
 
 ## Development
 

@@ -1,9 +1,11 @@
 """Ember Memory v2.0 — entry point for all commands."""
 
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime
+from pathlib import Path
 
 EMBER_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -77,8 +79,37 @@ def print_desktop_result(action):
     print(format_result(actions[action]()))
 
 
+def print_uninstall_result(delete_data=False):
+    """Remove OS launcher artifacts and print package/data uninstall guidance."""
+    from ember_memory.desktop_integration import format_result, uninstall_desktop_launcher
+
+    result = uninstall_desktop_launcher()
+    print(format_result(result))
+    print()
+    print("Desktop launcher cleanup complete.")
+    print()
+    print("To remove the installed Python package, run:")
+    print(f"  {sys.executable} -m pip uninstall ember-memory")
+
+    data_dir = Path.home() / ".ember-memory"
+    if delete_data:
+        shutil.rmtree(data_dir, ignore_errors=True)
+        print()
+        print(f"Deleted local Ember Memory data: {data_dir}")
+    else:
+        print()
+        print("Local memories and settings are preserved by default.")
+        print("To delete them too, run:")
+        if os.name == "nt":
+            print(r"  rmdir /s /q %USERPROFILE%\.ember-memory")
+        else:
+            print("  rm -rf ~/.ember-memory")
+        print("Or rerun: ember-memory uninstall --delete-data")
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "launch"
+    args = sys.argv[2:]
 
     if cmd in {"launch", "app"}:
         launch_app_detached()
@@ -100,6 +131,9 @@ def main():
     elif cmd in {"install-desktop", "uninstall-desktop", "desktop-status"}:
         print_desktop_result(cmd)
 
+    elif cmd == "uninstall":
+        print_uninstall_result(delete_data="--delete-data" in args)
+
     else:
         print("Ember Memory v2.0")
         print()
@@ -108,6 +142,7 @@ def main():
         print("  python -m ember_memory controller     Launch the controller in the foreground")
         print("  python -m ember_memory install-desktop Create app launcher / Start Menu shortcut")
         print("  python -m ember_memory uninstall-desktop Remove app launcher / Start Menu shortcut")
+        print("  python -m ember_memory uninstall       Remove launcher and show package/data cleanup")
         print("  python -m ember_memory desktop-status Check desktop launcher status")
         print("  python -m ember_memory tray           Launch the system tray")
         print("  python -m ember_memory setup          Launch the controller in the foreground")

@@ -55,6 +55,58 @@ def test_controller_command_uses_foreground_controller(monkeypatch):
     assert calls == ["controller"]
 
 
+def test_uninstall_command_removes_launcher_and_preserves_data_by_default(monkeypatch, tmp_path, capsys):
+    removed = []
+    data_dir = tmp_path / "home" / ".ember-memory"
+    data_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(entrypoint.Path, "home", lambda: tmp_path / "home")
+    monkeypatch.setattr(entrypoint.sys, "executable", "/tmp/ember-env/bin/python")
+
+    def fake_uninstall():
+        removed.append("launcher")
+        return {"ok": True, "platform": "linux", "removed": ["/tmp/launcher"]}
+
+    monkeypatch.setattr(
+        "ember_memory.desktop_integration.uninstall_desktop_launcher",
+        fake_uninstall,
+    )
+    monkeypatch.setattr(
+        "ember_memory.desktop_integration.format_result",
+        lambda result: "formatted-result",
+    )
+
+    entrypoint.print_uninstall_result()
+
+    output = capsys.readouterr().out
+    assert removed == ["launcher"]
+    assert data_dir.exists()
+    assert "formatted-result" in output
+    assert "/tmp/ember-env/bin/python -m pip uninstall ember-memory" in output
+    assert "Local memories and settings are preserved" in output
+
+
+def test_uninstall_command_can_delete_data(monkeypatch, tmp_path, capsys):
+    data_dir = tmp_path / "home" / ".ember-memory"
+    data_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(entrypoint.Path, "home", lambda: tmp_path / "home")
+    monkeypatch.setattr(
+        "ember_memory.desktop_integration.uninstall_desktop_launcher",
+        lambda: {"ok": True, "platform": "linux", "removed": []},
+    )
+    monkeypatch.setattr(
+        "ember_memory.desktop_integration.format_result",
+        lambda result: "formatted-result",
+    )
+
+    entrypoint.print_uninstall_result(delete_data=True)
+
+    output = capsys.readouterr().out
+    assert not data_dir.exists()
+    assert "Deleted local Ember Memory data" in output
+
+
 class DummyLog:
     def __init__(self):
         self.closed = False
