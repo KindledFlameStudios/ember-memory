@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 EMBER_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PACKAGE_URL = "https://github.com/KindledFlameStudios/ember-memory/archive/refs/heads/main.zip"
 
 
 def _open_launch_log(name):
@@ -107,6 +108,21 @@ def print_uninstall_result(delete_data=False):
         print("Or rerun: ember-memory uninstall --delete-data")
 
 
+def print_update_result():
+    """Print the safest update commands for the current Python environment."""
+    print("Ember Memory update")
+    print()
+    print("Close Ember Memory from the tray first, then run the normal update:")
+    print(f"  {sys.executable} -m pip install --upgrade {PACKAGE_URL}")
+    print()
+    print("That updates Ember Memory and installs only missing or newly required dependencies.")
+    print()
+    print("If the environment is already healthy and you only need the latest app code:")
+    print(f"  {sys.executable} -m pip install --upgrade --no-deps {PACKAGE_URL}")
+    print()
+    print("Avoid --force-reinstall for routine updates on Windows; it can churn locked dependency DLLs.")
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "launch"
     args = sys.argv[2:]
@@ -134,6 +150,9 @@ def main():
     elif cmd == "uninstall":
         print_uninstall_result(delete_data="--delete-data" in args)
 
+    elif cmd == "update":
+        print_update_result()
+
     else:
         print("Ember Memory v2.0")
         print()
@@ -143,6 +162,7 @@ def main():
         print("  python -m ember_memory install-desktop Create app launcher / Start Menu shortcut")
         print("  python -m ember_memory uninstall-desktop Remove app launcher / Start Menu shortcut")
         print("  python -m ember_memory uninstall       Remove launcher and show package/data cleanup")
+        print("  python -m ember_memory update          Show safe update commands")
         print("  python -m ember_memory desktop-status Check desktop launcher status")
         print("  python -m ember_memory tray           Launch the system tray")
         print("  python -m ember_memory setup          Launch the controller in the foreground")

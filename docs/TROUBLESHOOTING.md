@@ -50,6 +50,27 @@ Detached launch errors are also written to:
 ~/.ember-memory/controller_launch.log
 ```
 
+### Windows Update Hits Access Denied
+
+**Error:** `WinError 5 Access is denied` while pip is reinstalling a dependency DLL such as `clr_loader.dll`.
+
+**Cause:** A running app, tray process, CLI hook, or Python process still has files open inside the Ember Memory environment. This usually happens after `pip install --force-reinstall ...`, because force reinstall churns dependencies that do not need to change.
+
+**Solution:**
+1. Quit Ember Memory from the tray.
+2. Close any terminals or CLIs using the `ember-memory` conda/venv environment.
+3. Open a fresh Miniforge Prompt or terminal and activate the environment.
+4. Use the normal update path:
+   ```powershell
+   python -m pip install --upgrade https://github.com/KindledFlameStudios/ember-memory/archive/refs/heads/main.zip
+   ```
+
+You can also run `ember-memory update` to print update commands for the active Python environment. If the environment is already healthy and you only need the newest app code, use the `--no-deps` command it prints.
+
+If the environment is genuinely broken, recreate the environment. Use `--force-reinstall` only as a last-resort repair step after every Ember Memory process is closed.
+
+Pip warnings about temporary uninstall folders are usually safe to remove after all Python processes using that environment are closed.
+
 ### Model Not Found
 
 **Error:** `Not found. Run: ollama pull bge-m3`

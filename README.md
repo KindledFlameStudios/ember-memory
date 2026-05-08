@@ -100,6 +100,24 @@ ember-memory install-desktop
 
 In the app, open **CLI Status**, click **Run Install**, then **Test Hooks**. Restart your CLI after the hook test passes.
 
+### Update an Existing Install
+
+For normal updates, close Ember Memory from the tray first, then run:
+
+```powershell
+python -m pip install --upgrade https://github.com/KindledFlameStudios/ember-memory/archive/refs/heads/main.zip
+```
+
+Or ask Ember Memory to print the exact command for your active environment:
+
+```powershell
+ember-memory update
+```
+
+This updates Ember Memory without forcing every dependency to reinstall. If your environment is already healthy and you only need the newest app code, `ember-memory update` also prints an app-only `--no-deps` command.
+
+Use `--force-reinstall` only as a last-resort repair step. On Windows it can reinstall every dependency and hit locked DLLs if the app, tray, or another Python process still has the environment loaded.
+
 Already have Python 3.12 available through the Windows Python launcher? You can use venv instead:
 
 ```powershell

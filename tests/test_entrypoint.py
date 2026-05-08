@@ -107,6 +107,19 @@ def test_uninstall_command_can_delete_data(monkeypatch, tmp_path, capsys):
     assert "Deleted local Ember Memory data" in output
 
 
+def test_update_command_prints_safe_update_options(monkeypatch, capsys):
+    monkeypatch.setattr(entrypoint.sys, "executable", "/tmp/ember-env/bin/python")
+
+    entrypoint.print_update_result()
+
+    output = capsys.readouterr().out
+    assert "Ember Memory update" in output
+    assert f"/tmp/ember-env/bin/python -m pip install --upgrade {entrypoint.PACKAGE_URL}" in output
+    assert "/tmp/ember-env/bin/python -m pip install --upgrade --no-deps" in output
+    assert entrypoint.PACKAGE_URL in output
+    assert "Avoid --force-reinstall" in output
+
+
 class DummyLog:
     def __init__(self):
         self.closed = False
