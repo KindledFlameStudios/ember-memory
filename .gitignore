@@ -30,6 +30,10 @@ FORGE.md
 docs/superpowers/
 docs/research/
 docs/Project Review and Improvement Plan.md
+docs/DEMO_VIDEO_SCRIPT.md
+docs/REDDIT_LAUNCH_POST.md
+docs/Ember_Memory_Diagnostic_Report.md
+update_models.py
 **/*.bak
 **/*.tmp
 pushgit.sh
