@@ -14,18 +14,31 @@ class TestOllamaProviderInterface(unittest.TestCase):
         """OllamaProvider must be a subclass of EmbeddingProvider."""
         self.assertTrue(issubclass(OllamaProvider, EmbeddingProvider))
 
-    def test_dimension_is_768(self):
-        """nomic-embed-text (default model) should report 768 dimensions."""
-        provider = OllamaProvider()
-        self.assertEqual(provider.dimension(), 768)
-
-    def test_dimension_nomic_embed_text(self):
-        """nomic-embed-text should report 768 dimensions."""
+    @patch("ember_memory.core.embeddings.ollama.requests.post")
+    def test_dimension_nomic_embed_text(self, mock_post):
+        """nomic-embed-text should dynamically report 768 dimensions."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"embeddings": [[0.1] * 768]}
+        mock_post.return_value = mock_response
+        
         provider = OllamaProvider(model="nomic-embed-text")
         self.assertEqual(provider.dimension(), 768)
+        mock_post.assert_called_once()
 
-    def test_dimension_unknown_model_defaults_to_768(self):
-        """Unknown models fall back to a 768-dimension assumption."""
+    @patch("ember_memory.core.embeddings.ollama.requests.post")
+    def test_dimension_bge_m3(self, mock_post):
+        """bge-m3 should dynamically report 1024 dimensions."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"embeddings": [[0.1] * 1024]}
+        mock_post.return_value = mock_response
+        
+        provider = OllamaProvider(model="bge-m3")
+        self.assertEqual(provider.dimension(), 1024)
+
+    @patch("ember_memory.core.embeddings.ollama.requests.post")
+    def test_dimension_unknown_model_defaults_to_768_on_error(self, mock_post):
+        """If the API call fails, it falls back to 768."""
+        mock_post.side_effect = Exception("API error")
         provider = OllamaProvider(model="some-future-model")
         self.assertEqual(provider.dimension(), 768)
 
