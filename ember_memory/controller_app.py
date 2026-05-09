@@ -1421,13 +1421,14 @@ class EmberAPI:
             )
 
             if topic:
+                from ember_memory import config
                 results = retrieve(
                     prompt=topic,
                     ai_id=ai_id,
                     backend=backend,
                     embedder=embedder,
-                    limit=5,
-                    similarity_threshold=0.3,
+                    limit=config.MAX_HOOK_RESULTS,
+                    similarity_threshold=config.SIMILARITY_THRESHOLD,
                     engine_db_path=engine_db_path,
                 )
                 lines = [

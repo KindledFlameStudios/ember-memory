@@ -178,6 +178,9 @@ class PineconeBackend(MemoryBackend):
         Reads collection registrations from the reserved metadata namespace,
         then cross-references with live namespace stats for accurate counts.
         """
+        if self._index is None:
+            return []
+            
         index = self._require_index()
 
         # Build a map of namespace -> vector_count from live stats.
