@@ -28,7 +28,7 @@
    ```
 3. Pull the embedding model:
    ```bash
-   ollama pull bge-m3
+   ollama pull nomic-embed-text
    ```
 
 Ollama is only required for the local default embedding path. You can use OpenAI, Google, or OpenRouter embeddings instead by adding the provider key in the controller Settings tab.
@@ -73,11 +73,11 @@ Pip warnings about temporary uninstall folders are usually safe to remove after 
 
 ### Model Not Found
 
-**Error:** `Not found. Run: ollama pull bge-m3`
+**Error:** `Not found. Run: ollama pull nomic-embed-text`
 
 **Solution:**
 ```bash
-ollama pull bge-m3
+ollama pull nomic-embed-text
 ```
 
 If you're using a different model, update your config:

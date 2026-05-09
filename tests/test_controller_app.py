@@ -35,7 +35,7 @@ def test_load_config_migrates_legacy_threshold_fallback(monkeypatch, tmp_path):
                 "EMBER_BACKEND=chromadb",
                 f"EMBER_DATA_DIR={data_dir}",
                 "EMBER_EMBEDDING_PROVIDER=ollama",
-                "EMBER_EMBEDDING_MODEL=bge-m3",
+                "EMBER_EMBEDDING_MODEL=nomic-embed-text",
                 "EMBER_SIMILARITY_THRESHOLD=0.7",
             ]
         )

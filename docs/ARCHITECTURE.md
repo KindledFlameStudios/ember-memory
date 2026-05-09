@@ -85,7 +85,7 @@
    ▼
 3. EMBEDDING GENERATED
    │
-   │ - Provider: Ollama (bge-m3) / OpenAI / Google / OpenRouter
+   │ - Provider: Ollama (nomic-embed-text) / OpenAI / Google / OpenRouter
    │ - Output: 768-dimensional vector
    │
    ▼
@@ -248,7 +248,7 @@ ember-memory/
 │   │   │
 │   │   ├── embeddings/
 │   │   │   ├── base.py          # EmbeddingProvider interface
-│   │   │   ├── ollama.py        # Local embeddings (bge-m3)
+│   │   │   ├── ollama.py        # Local embeddings (nomic-embed-text)
 │   │   │   ├── openai_provider.py      # OpenAI embeddings
 │   │   │   ├── google_provider.py      # Google embeddings
 │   │   │   ├── openrouter_provider.py  # OpenRouter embeddings

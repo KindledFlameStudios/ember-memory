@@ -3148,8 +3148,8 @@ function loadOllamaModels() {
 
     if (!r || !r.ok || !r.models || r.models.length === 0) {
       var opt = document.createElement('option');
-      opt.value = current || 'bge-m3';
-      opt.textContent = (r && r.msg) ? r.msg : 'No models — run: ollama pull bge-m3';
+      opt.value = current || 'nomic-embed-text';
+      opt.textContent = (r && r.msg) ? r.msg : 'No models — run: ollama pull nomic-embed-text';
       sel.appendChild(opt);
       return;
     }
@@ -3191,7 +3191,7 @@ function loadOllamaModels() {
     }
 
     if (!hasSelected && r.models.length > 0) {
-      var fallback = r.models.find(function(m) { return m.name === 'bge-m3' || m.name.indexOf('bge-m3:') === 0; });
+      var fallback = r.models.find(function(m) { return m.name === 'nomic-embed-text' || m.name.indexOf('nomic-embed-text:') === 0; });
       sel.value = (fallback || r.models[0]).name;
     }
   });

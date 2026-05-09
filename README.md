@@ -75,7 +75,7 @@ If pip itself reports that it is missing, run `conda install pip` inside the act
 Pull a local embedding model (free, private):
 
 ```powershell
-ollama pull bge-m3
+ollama pull nomic-embed-text
 ```
 
 If `ollama` is not recognized, install Ollama first:
@@ -147,7 +147,7 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -e .
 
 # 2. Pull a local embedding model (free, private)
-ollama pull bge-m3
+ollama pull nomic-embed-text
 
 # 3. Open the app
 ember-memory
@@ -163,7 +163,7 @@ The controller detects your CLIs, configures the hooks, and shows your live memo
 
 > **Codex trust prompt.** Codex may ask you to review/trust hook execution after install. That is expected: Ember Memory installs a local hook command, and Codex requires the user to approve trusted workspace behavior. Choose the trust option for workspaces where you want automatic retrieval.
 
-> **Need Ollama?** Install from [ollama.com](https://ollama.com) or run `winget install -e --id Ollama.Ollama` on Windows. Once it's running, `ollama pull bge-m3` is the only setup step. You can skip Ollama if you configure OpenAI, Google, or OpenRouter embeddings in Settings.
+> **Need Ollama?** Install from [ollama.com](https://ollama.com) or run `winget install -e --id Ollama.Ollama` on Windows. Once it's running, `ollama pull nomic-embed-text` is the only setup step. You can skip Ollama if you configure OpenAI, Google, or OpenRouter embeddings in Settings.
 
 > **Install isolation matters.** Ember Memory ships a real local vector database stack. Use a venv, pipx, or a dedicated conda environment instead of installing into your base Python environment.
 
@@ -333,7 +333,7 @@ ChromaDB works out of the box. All backends implement the same interface — swi
 
 | Provider | Model | Cost |
 |----------|-------|------|
-| **Ollama** (default) | bge-m3 | Free, local |
+| **Ollama** (default) | nomic-embed-text | Free, local |
 | **OpenAI** | text-embedding-3-small | ~$0.02/1M tokens |
 | **Google** | gemini-embedding-001 | Generous free tier |
 | **OpenRouter** | baai/bge-m3 | Unified embedding gateway |

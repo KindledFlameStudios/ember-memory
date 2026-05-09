@@ -59,7 +59,7 @@ DATA_DIR = _get("EMBER_DATA_DIR", DEFAULT_DATA_DIR)
 # ── Embedding ────────────────────────────────────────────────────────────────
 
 EMBEDDING_PROVIDER = _get("EMBER_EMBEDDING_PROVIDER", "ollama")
-EMBEDDING_MODEL = _get("EMBER_EMBEDDING_MODEL", "bge-m3")
+EMBEDDING_MODEL = _get("EMBER_EMBEDDING_MODEL", "nomic-embed-text")
 OLLAMA_URL = _get("EMBER_OLLAMA_URL", "http://localhost:11434/api/embeddings")
 
 # ── Search ───────────────────────────────────────────────────────────────────

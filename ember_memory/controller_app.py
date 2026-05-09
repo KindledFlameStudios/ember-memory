@@ -242,7 +242,7 @@ def load_config():
         "backend": "chromadb",
         "data_dir": DEFAULT_DATA_DIR,
         "embedding_provider": "ollama",
-        "embedding_model": "bge-m3",
+        "embedding_model": "nomic-embed-text",
         "openai_embedding_model": "text-embedding-3-small",
         "google_embedding_model": "gemini-embedding-001",
         "openrouter_embedding_model": "baai/bge-m3",
@@ -293,10 +293,10 @@ def load_config():
         defaults["openai_embedding_model"] = defaults.get("embedding_model", "text-embedding-3-small")
     if "google_embedding_model" not in seen_keys and defaults.get("embedding_provider") == "google":
         model = defaults.get("embedding_model", "")
-        defaults["google_embedding_model"] = model if model and model != "bge-m3" else "gemini-embedding-001"
+        defaults["google_embedding_model"] = model if model and model != "nomic-embed-text" else "gemini-embedding-001"
     if "openrouter_embedding_model" not in seen_keys and defaults.get("embedding_provider") == "openrouter":
         model = defaults.get("embedding_model", "")
-        defaults["openrouter_embedding_model"] = model if model and model != "bge-m3" else "baai/bge-m3"
+        defaults["openrouter_embedding_model"] = model if model and model != "nomic-embed-text" else "baai/bge-m3"
 
     return defaults
 
@@ -312,7 +312,7 @@ def save_config(config):
         f"EMBER_BACKEND={config['backend']}",
         f"EMBER_DATA_DIR={config['data_dir']}",
         f"EMBER_EMBEDDING_PROVIDER={config['embedding_provider']}",
-        f"EMBER_EMBEDDING_MODEL={config.get('embedding_model', 'bge-m3')}",
+        f"EMBER_EMBEDDING_MODEL={config.get('embedding_model', 'nomic-embed-text')}",
         f"EMBER_OPENAI_EMBEDDING_MODEL={config.get('openai_embedding_model', 'text-embedding-3-small')}",
         f"EMBER_GOOGLE_EMBEDDING_MODEL={config.get('google_embedding_model', 'gemini-embedding-001')}",
         f"EMBER_OPENROUTER_EMBEDDING_MODEL={config.get('openrouter_embedding_model', 'baai/bge-m3')}",
@@ -698,7 +698,7 @@ class EmberAPI:
                 if r.returncode == 0:
                     results["ollama"] = {"ok": True, "msg": "Running"}
                     cfg = load_config()
-                    model = cfg.get("embedding_model", "bge-m3")
+                    model = cfg.get("embedding_model", "nomic-embed-text")
                     if model in r.stdout:
                         results["model"] = {"ok": True, "msg": f"{model} available"}
                     else:
@@ -1484,7 +1484,7 @@ class EmberAPI:
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read())
                 models = [m.get("name", "") for m in data.get("models", [])]
-                wanted = cfg.get("embedding_model", "bge-m3")
+                wanted = cfg.get("embedding_model", "nomic-embed-text")
                 if any(wanted in m for m in models):
                     return {"ok": True, "msg": f"Connected — {wanted} available"}
                 else:
@@ -1514,7 +1514,7 @@ class EmberAPI:
                         "size_gb": round(size / (1024**3), 1) if size else 0,
                         "is_embedding": is_embed,
                     })
-                current = cfg.get("embedding_model", "bge-m3")
+                current = cfg.get("embedding_model", "nomic-embed-text")
                 return {"ok": True, "models": models, "current": current}
         except Exception as e:
             return {"ok": False, "models": [], "msg": str(e)}

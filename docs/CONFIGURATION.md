@@ -9,7 +9,7 @@ All settings via environment variables or `~/.ember-memory/config.env`.
 | `EMBER_BACKEND` | `chromadb` | Storage backend |
 | `EMBER_DATA_DIR` | `~/.ember-memory` | Where data is stored |
 | `EMBER_EMBEDDING_PROVIDER` | `ollama` | Embedding provider |
-| `EMBER_EMBEDDING_MODEL` | `bge-m3` | Ollama embedding model |
+| `EMBER_EMBEDDING_MODEL` | `nomic-embed-text` | Ollama embedding model |
 | `EMBER_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI embedding model |
 | `EMBER_GOOGLE_EMBEDDING_MODEL` | `gemini-embedding-001` | Google embedding model |
 | `EMBER_OPENROUTER_EMBEDDING_MODEL` | `baai/bge-m3` | OpenRouter embedding model |

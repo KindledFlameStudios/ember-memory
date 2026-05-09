@@ -14,20 +14,20 @@ class TestOllamaProviderInterface(unittest.TestCase):
         """OllamaProvider must be a subclass of EmbeddingProvider."""
         self.assertTrue(issubclass(OllamaProvider, EmbeddingProvider))
 
-    def test_dimension_is_1024(self):
-        """bge-m3 (default model) should report 1024 dimensions."""
+    def test_dimension_is_768(self):
+        """nomic-embed-text (default model) should report 768 dimensions."""
         provider = OllamaProvider()
-        self.assertEqual(provider.dimension(), 1024)
+        self.assertEqual(provider.dimension(), 768)
 
     def test_dimension_nomic_embed_text(self):
         """nomic-embed-text should report 768 dimensions."""
         provider = OllamaProvider(model="nomic-embed-text")
         self.assertEqual(provider.dimension(), 768)
 
-    def test_dimension_unknown_model_defaults_to_1024(self):
-        """Unknown models fall back to a 1024-dimension assumption."""
+    def test_dimension_unknown_model_defaults_to_768(self):
+        """Unknown models fall back to a 768-dimension assumption."""
         provider = OllamaProvider(model="some-future-model")
-        self.assertEqual(provider.dimension(), 1024)
+        self.assertEqual(provider.dimension(), 768)
 
 
 class TestOllamaProviderEmbed(unittest.TestCase):
@@ -38,7 +38,7 @@ class TestOllamaProviderEmbed(unittest.TestCase):
 
     def test_embed_returns_vector(self):
         """embed() should return the first embedding from the response."""
-        fake_vector = [0.1] * 1024
+        fake_vector = [0.1] * 768
         mock_response = MagicMock()
         mock_response.json.return_value = {"embeddings": [fake_vector]}
         mock_response.raise_for_status.return_value = None
@@ -50,16 +50,16 @@ class TestOllamaProviderEmbed(unittest.TestCase):
 
         mock_post.assert_called_once_with(
             "http://localhost:11434/api/embed",
-            json={"model": "bge-m3", "input": "hello world"},
+            json={"model": "nomic-embed-text", "input": "hello world"},
             timeout=30,
         )
         self.assertEqual(result, fake_vector)
-        self.assertEqual(len(result), 1024)
+        self.assertEqual(len(result), 768)
 
     def test_embed_batch(self):
         """embed_batch() should return one vector per input text."""
-        vec_a = [0.1] * 1024
-        vec_b = [0.2] * 1024
+        vec_a = [0.1] * 768
+        vec_b = [0.2] * 768
         mock_response = MagicMock()
         mock_response.json.return_value = {"embeddings": [vec_a, vec_b]}
         mock_response.raise_for_status.return_value = None
@@ -73,7 +73,7 @@ class TestOllamaProviderEmbed(unittest.TestCase):
 
         mock_post.assert_called_once_with(
             "http://localhost:11434/api/embed",
-            json={"model": "bge-m3", "input": texts},
+            json={"model": "nomic-embed-text", "input": texts},
             timeout=60,
         )
         self.assertEqual(len(result), 2)

@@ -1,13 +1,13 @@
-"""Ollama embedding provider — local bge-m3 by default."""
+"""Ollama embedding provider — local nomic-embed-text by default."""
 
 import requests
 from ember_memory.core.embeddings.base import EmbeddingProvider
 
 # Model -> dimension mapping
 _MODEL_DIMS = {
-    "bge-m3": 1024,
     "nomic-embed-text": 768,
-    "mxbai-embed-large": 1024,
+    "nomic-embed-text": 768,
+    "mxbai-embed-large": 768,
     "all-minilm": 384,
 }
 
@@ -15,8 +15,8 @@ _MODEL_DIMS = {
 class OllamaProvider(EmbeddingProvider):
     """Embed via local Ollama server.
 
-    Uses the Ollama ``/api/embed`` endpoint. The default model is ``bge-m3``,
-    which produces 1024-dimensional vectors and runs well on CPU.
+    Uses the Ollama ``/api/embed`` endpoint. The default model is ``nomic-embed-text``,
+    which produces 768-dimensional vectors and runs well on CPU.
 
     Args:
         url: Full URL to the Ollama embed endpoint.
@@ -24,11 +24,11 @@ class OllamaProvider(EmbeddingProvider):
     """
 
     def __init__(self, url: str = "http://localhost:11434/api/embed",
-                 model: str = "bge-m3"):
+                 model: str = "nomic-embed-text"):
         # Normalize: always use /api/embed (the modern endpoint)
         self._url = url.replace("/api/embeddings", "/api/embed")
         self._model = model
-        self._dim = _MODEL_DIMS.get(model, 1024)
+        self._dim = _MODEL_DIMS.get(model, 768)
         self._base_url = self._url.rsplit("/api/", 1)[0] if "/api/" in self._url else self._url
 
     def embed(self, text: str) -> list[float]:
@@ -70,7 +70,7 @@ class OllamaProvider(EmbeddingProvider):
         """Return the vector dimensionality for the configured model.
 
         Returns:
-            An integer from the known-dimension table, defaulting to 1024 for
+            An integer from the known-dimension table, defaulting to 768 for
             unrecognised model names.
         """
         return self._dim
