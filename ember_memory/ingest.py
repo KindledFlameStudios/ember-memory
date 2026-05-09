@@ -67,6 +67,9 @@ def _split_oversized_section(section: str, max_chunk: int, min_body: int) -> lis
 
     header_line, body = _split_header(section)
     paragraphs = [part.strip() for part in re.split(r'\n\n+', body if header_line else section) if part.strip()]
+    if len(paragraphs) <= 1 and len(section) > max_chunk:
+        paragraphs = [part.strip() for part in re.split(r'\n+', body if header_line else section) if part.strip()]
+        
     if not paragraphs:
         return [section] if len(section.strip()) >= MIN_STANDALONE_CHUNK else []
 

@@ -1359,20 +1359,8 @@ class EmberAPI:
 
                 fname = os.path.basename(fpath)
 
-                chunks = []
-                if '## ' in content or '# ' in content:
-                    sections = _re.split(r'(?=^#{1,3} )', content, flags=_re.MULTILINE)
-                    for section in sections:
-                        section = section.strip()
-                        if len(section) > 50:
-                            chunks.append(section)
-
-                if not chunks:
-                    max_chunk = 1500
-                    for i in range(0, len(content), max_chunk):
-                        chunk = content[i:i + max_chunk].strip()
-                        if len(chunk) > 50:
-                            chunks.append(chunk)
+                from ember_memory.ingest import chunk_markdown
+                chunks = chunk_markdown(content)
 
                 for i, chunk in enumerate(chunks):
                     doc_id = hashlib.md5(f'{fname}:{i}:{chunk[:100]}'.encode()).hexdigest()
@@ -1391,8 +1379,9 @@ class EmberAPI:
                             },
                         )
                         chunks_added += 1
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        import logging
+                        logging.error(f"Failed to ingest chunk {i} of {fname}: {e}")
 
             return {
                 "ok": True,
