@@ -1604,7 +1604,8 @@ class EmberAPI:
             webview.OPEN_DIALOG,
             allow_multiple=True,
             file_types=(
-                'Markdown files (*.md;*.txt)',
+                'All supported files (*.md;*.txt;*.json;*.jsonl)',
+                'Markdown & Text (*.md;*.txt)',
                 'JSON files (*.json;*.jsonl)',
                 'All files (*.*)',
             ),
