@@ -3871,6 +3871,88 @@ function init() {
   }
 }
 
+// ── Custom Context Menu ─────────────────────────────────
+var contextMenu = null;
+
+function buildContextMenu() {
+  if (contextMenu) return contextMenu;
+
+  contextMenu = document.createElement('div');
+  contextMenu.id = 'emberContextMenu';
+  contextMenu.style.cssText =
+    'position:fixed; z-index:10000; background:var(--bg-elevated,#211c14);' +
+    'border:1px solid var(--border-em,rgba(255,120,32,0.18)); border-radius:6px;' +
+    'padding:4px 0; min-width:140px; box-shadow:0 8px 24px rgba(0,0,0,0.6);' +
+    'display:none; font-size:12px; font-family:var(--font-ui,sans-serif);';
+
+  ['Copy', 'Cut', 'Paste', 'Select All'].forEach(function(action) {
+    var item = document.createElement('div');
+    item.textContent = action;
+    item.style.cssText =
+      'padding:6px 16px; cursor:pointer; color:var(--fg,#e8ddd0);' +
+      'transition:background 0.1s;';
+    item.addEventListener('mouseenter', function() {
+      item.style.background = 'rgba(255,120,32,0.15)';
+    });
+    item.addEventListener('mouseleave', function() {
+      item.style.background = '';
+    });
+
+    if (action === 'Copy') {
+      item.addEventListener('click', function() { document.execCommand('copy'); hideContextMenu(); });
+    } else if (action === 'Cut') {
+      item.addEventListener('click', function() { document.execCommand('cut'); hideContextMenu(); });
+    } else if (action === 'Paste') {
+      item.addEventListener('click', function() { document.execCommand('paste'); hideContextMenu(); });
+    } else if (action === 'Select All') {
+      item.addEventListener('click', function() { document.execCommand('selectAll'); hideContextMenu(); });
+    }
+
+    contextMenu.appendChild(item);
+  });
+
+  document.body.appendChild(contextMenu);
+  return contextMenu;
+}
+
+function showContextMenu(x, y) {
+  var menu = buildContextMenu();
+  menu.style.display = 'block';
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+}
+
+function hideContextMenu() {
+  if (contextMenu) contextMenu.style.display = 'none';
+}
+
+function isEditableTarget(el) {
+  var tag = (el.tagName || '').toLowerCase();
+  return tag === 'input' || tag === 'textarea' || el.isContentEditable;
+}
+
+document.addEventListener('contextmenu', function(e) {
+  var target = e.target;
+  // Only show custom menu on editable fields — let native handling work elsewhere
+  if (!isEditableTarget(target)) {
+    hideContextMenu();
+    return;
+  }
+  e.preventDefault();
+  e.stopPropagation();
+  showContextMenu(e.clientX, e.clientY);
+}, true);
+
+document.addEventListener('mousedown', function(e) {
+  if (contextMenu && !contextMenu.contains(e.target)) {
+    hideContextMenu();
+  }
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') hideContextMenu();
+});
+
 if (window.pywebview && window.pywebview.api) {
   init();
 } else {
