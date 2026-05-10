@@ -3876,3 +3876,9 @@ if (window.pywebview && window.pywebview.api) {
 } else {
   window.addEventListener('pywebviewready', init);
 }
+
+// Force enable native context menu on Windows WebView2
+window.addEventListener('contextmenu', function(e) {
+  // We don't preventDefault() here, allowing the browser/engine to show the menu.
+  return true;
+}, true);
