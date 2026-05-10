@@ -3931,10 +3931,16 @@ function isEditableTarget(el) {
   return tag === 'input' || tag === 'textarea' || el.isContentEditable;
 }
 
+function hasSelection() {
+  var sel = window.getSelection();
+  return sel && sel.toString().trim().length > 0;
+}
+
 document.addEventListener('contextmenu', function(e) {
   var target = e.target;
-  // Only show custom menu on editable fields — let native handling work elsewhere
-  if (!isEditableTarget(target)) {
+
+  // Show custom menu on editable fields, OR when text is selected anywhere
+  if (!isEditableTarget(target) && !hasSelection()) {
     hideContextMenu();
     return;
   }
