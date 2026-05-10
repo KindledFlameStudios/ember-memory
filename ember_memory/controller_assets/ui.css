@@ -42,11 +42,7 @@ html, body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-input, textarea, [contenteditable] {
-  user-select: text !important;
-  -webkit-user-select: text !important;
+  user-select: none;
 }
 
 .shell {

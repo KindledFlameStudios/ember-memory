@@ -2236,14 +2236,6 @@ def run_gui():
 
     from ember_memory.desktop_integration import get_icon_path
 
-    # Initialize settings BEFORE window creation
-    webview.settings["OPEN_DEVTOOLS_IN_DEBUG"] = False
-    # Attempt to enable context menu for all versions
-    try:
-        webview.settings["ALLOW_CONTEXT_MENU"] = True
-    except KeyError:
-        pass
-
     api = EmberAPI()
     icon_path = get_icon_path()
     window = webview.create_window(
@@ -2256,7 +2248,7 @@ def run_gui():
         background_color="#050505",
         text_select=True,
     )
-    start_kwargs = {"debug": True}
+    start_kwargs = {"debug": False}
     if gui:
         start_kwargs["gui"] = gui
     if icon_path:
