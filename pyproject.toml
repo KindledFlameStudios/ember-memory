@@ -13,7 +13,7 @@ authors = [
   { name = "Kindled Flame Studios", email = "support@kindledflamestudios.com" }
 ]
 dependencies = [
-  "chromadb>=1.0.0",
+  "chromadb>=1.0.0,<2.0.0,<2.0.0",
   "mcp[cli]>=1.0.0",
   "requests>=2.31.0",
   "pywebview>=5.0; sys_platform != 'linux'",
