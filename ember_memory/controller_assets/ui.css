@@ -45,6 +45,11 @@ html, body {
   user-select: none;
 }
 
+input, textarea, [contenteditable], .snippet-code {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .shell {
   display: flex;
   flex-direction: column;
