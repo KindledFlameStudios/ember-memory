@@ -1350,6 +1350,7 @@ class EmberAPI:
                 return {"ok": False, "msg": "No supported files found (.md, .txt, .json, .jsonl)"}
 
             chunks_added = 0
+            last_error = None
             for fpath in all_files:
                 with open(fpath, 'r', errors='replace') as f:
                     content = f.read().strip()
@@ -1381,11 +1382,19 @@ class EmberAPI:
                         chunks_added += 1
                     except Exception as e:
                         import logging
+                        last_error = str(e)
                         logging.error(f"Failed to ingest chunk {i} of {fname}: {e}")
+
+            msg = f"Imported {len(all_files)} files into '{full_name}' ({chunks_added} chunks)"
+            if chunks_added == 0 and last_error:
+                msg = f"Import failed (0 chunks added). Last embedding error: {last_error}"
+                return {"ok": False, "msg": msg}
+            elif last_error:
+                msg += f" (Some chunks failed: {last_error})"
 
             return {
                 "ok": True,
-                "msg": f"Imported {len(all_files)} files into '{full_name}' ({chunks_added} chunks)",
+                "msg": msg,
                 "files": len(all_files),
                 "collection": full_name,
                 "chunks": chunks_added,
