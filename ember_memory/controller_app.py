@@ -2248,7 +2248,8 @@ def run_gui():
         background_color="#050505",
         text_select=True,
     )
-    start_kwargs = {"debug": False}
+    webview.settings["OPEN_DEVTOOLS_IN_DEBUG"] = False
+    start_kwargs = {"debug": True}
     if gui:
         start_kwargs["gui"] = gui
     if icon_path:
