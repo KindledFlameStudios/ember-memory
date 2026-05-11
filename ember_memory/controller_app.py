@@ -2249,7 +2249,10 @@ def run_gui():
         background_color="#050505",
         text_select=True,
     )
-    start_kwargs = {"debug": False}
+    # debug must be True on Windows: WebView2 ties AreDefaultContextMenusEnabled
+    # to the debug flag, suppressing even the DOM contextmenu event when False.
+    # Our custom JS menu depends on that event firing. Linux Qt is unaffected.
+    start_kwargs = {"debug": platform.system() == "Windows"}
     if gui:
         start_kwargs["gui"] = gui
     if icon_path:
