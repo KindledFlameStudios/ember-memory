@@ -2237,6 +2237,11 @@ def run_gui():
 
     from ember_memory.desktop_integration import get_icon_path
 
+    # Enable native context menus: WebView2 ties AreDefaultContextMenusEnabled
+    # to the debug flag, suppressing even the DOM contextmenu event when False.
+    # OPEN_DEVTOOLS_IN_DEBUG=False prevents the F12 DevTools popup.
+    webview.settings['OPEN_DEVTOOLS_IN_DEBUG'] = False
+
     api = EmberAPI()
     icon_path = get_icon_path()
     window = webview.create_window(
@@ -2249,10 +2254,7 @@ def run_gui():
         background_color="#050505",
         text_select=True,
     )
-    # debug must be True on Windows: WebView2 ties AreDefaultContextMenusEnabled
-    # to the debug flag, suppressing even the DOM contextmenu event when False.
-    # Our custom JS menu depends on that event firing. Linux Qt is unaffected.
-    start_kwargs = {"debug": platform.system() == "Windows"}
+    start_kwargs = {"debug": True}
     if gui:
         start_kwargs["gui"] = gui
     if icon_path:
