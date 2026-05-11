@@ -42,12 +42,6 @@ html, body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  user-select: none;
-}
-
-input, textarea, [contenteditable], .snippet-code {
-  user-select: text;
-  -webkit-user-select: text;
 }
 
 .shell {
