@@ -3936,7 +3936,16 @@ function hasSelection() {
   return sel && sel.toString().trim().length > 0;
 }
 
+function isQtWebEngine() {
+  // Linux pywebview uses Qt WebEngine, which has no native context menu.
+  // Windows (Edge WebView2) and macOS (WebKit) have working native menus.
+  return navigator.userAgent.indexOf('QtWebEngine') !== -1;
+}
+
 document.addEventListener('contextmenu', function(e) {
+  // Native menus work fine on Windows/macOS — let them handle it
+  if (!isQtWebEngine()) return;
+
   var target = e.target;
 
   // Show custom menu on editable fields, OR when text is selected anywhere
