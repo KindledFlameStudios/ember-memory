@@ -1327,8 +1327,8 @@ class EmberAPI:
 
             try:
                 backend.create_collection(full_name, dimension=dim)
-            except Exception:
-                pass
+            except Exception as e:
+                return {"ok": False, "msg": f"Failed to create collection '{full_name}': {e}"}
 
             all_files = []
             if isinstance(paths, str):

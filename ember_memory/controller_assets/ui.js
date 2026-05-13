@@ -1694,7 +1694,10 @@ var importSelectedItems = [];
 var currentImportMode = IMPORT_MODE_EXISTING;
 
 function sanitizeCollectionName(raw) {
-  return raw.toLowerCase().replace(/[^a-z0-9._-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'collection';
+  var result = raw.toLowerCase().replace(/[^a-z0-9._-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  // ChromaDB requires names 3-512 characters from [a-zA-Z0-9._-]
+  while (result.length < 3) result = result + '-';
+  return result || 'new-collection';
 }
 
 function buildScopedCollectionName(name, scope) {
