@@ -495,7 +495,13 @@ A flame that persists. Memory that carries forward.
 ## Uninstall
 
 ```bash
-ember-memory uninstall          # removes launcher and prints package/data cleanup steps
+ember-memory uninstall              # removes launcher + shows cleanup steps
+ember-memory uninstall --delete-data  # also wipes ~/.ember-memory (factory reset)
+```
+
+Full manual cleanup:
+```bash
+ember-memory uninstall-desktop      # remove launcher only
 python -m pip uninstall -y ember-memory
 rm -rf ~/.ember-memory    # optional: removes all stored memories
 ```
