@@ -1605,8 +1605,8 @@ class EmberAPI:
             allow_multiple=True,
             file_types=(
                 'All supported (*.md;*.txt;*.json;*.jsonl)',
-                'Markdown / Text (*.md;*.txt)',
-                'JSON files (*.json;*.jsonl)',
+                'Markdown (*.md;*.txt)',
+                'JSON (*.json;*.jsonl)',
                 'All files (*.*)',
             ),
         )
