@@ -13,6 +13,59 @@ function showToast(msg, type) {
   toastTimer = setTimeout(function() { el.classList.remove('show'); }, 3500);
 }
 
+function showConfirm(message, onConfirm, onCancel) {
+  /* Themed confirmation dialog — replaces native confirm(). */
+  var overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+
+  var box = document.createElement('div');
+  box.className = 'confirm-box';
+
+  var msgEl = document.createElement('div');
+  msgEl.className = 'confirm-msg';
+  msgEl.textContent = message;
+
+  var actions = document.createElement('div');
+  actions.className = 'confirm-actions';
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn btn-secondary btn-sm';
+  cancelBtn.textContent = 'Cancel';
+
+  var confirmBtn = document.createElement('button');
+  confirmBtn.className = 'btn btn-danger btn-sm';
+  confirmBtn.textContent = 'Delete';
+
+  function close() {
+    overlay.remove();
+  }
+
+  cancelBtn.addEventListener('click', function() {
+    close();
+    if (onCancel) onCancel();
+  });
+
+  confirmBtn.addEventListener('click', function() {
+    close();
+    if (onConfirm) onConfirm();
+  });
+
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) {
+      close();
+      if (onCancel) onCancel();
+    }
+  });
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(confirmBtn);
+  box.appendChild(msgEl);
+  box.appendChild(actions);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  confirmBtn.focus();
+}
+
 function nowStr() {
   var d = new Date();
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1049,14 +1102,15 @@ document.getElementById('heatModeCard').addEventListener('click', function() {
 });
 
 document.getElementById('resetEngineCard').addEventListener('click', function() {
-  if (!confirm('Reset all Engine state? This clears heat map, connections, and metadata. Cannot be undone.')) return;
-  callApi('reset_engine').then(function(r) {
-    if (r && r.ok) {
-      showToast(r.msg || 'Engine reset', 'ok');
-      loadDashboard();
-    } else {
-      showToast((r && r.msg) || 'Reset failed', 'err');
-    }
+  showConfirm('Reset all Engine state? This clears heat map, connections, and metadata. Cannot be undone.', function() {
+    callApi('reset_engine').then(function(r) {
+      if (r && r.ok) {
+        showToast(r.msg || 'Engine reset', 'ok');
+        loadDashboard();
+      } else {
+        showToast((r && r.msg) || 'Reset failed', 'err');
+      }
+    });
   });
 });
 
@@ -1477,16 +1531,17 @@ function buildColItem(col, labels, disabledMap) {
   });
 
   delBtn.addEventListener('click', function() {
-    if (!confirm('Delete collection "' + col.name + '"? This cannot be undone.')) return;
-    callApi('delete_collection', col.name).then(function(r) {
-      if (r && r.ok) {
-        showToast('Deleted: ' + col.name, 'ok');
-        if (expandedCol === col.name) expandedCol = null;
-        invalidateCollectionUiCache();
-        loadCollections(true);
-      } else {
-        showToast((r && r.msg) || 'Delete failed', 'err');
-      }
+    showConfirm('Delete collection "' + col.name + '"? This cannot be undone.', function() {
+      callApi('delete_collection', col.name).then(function(r) {
+        if (r && r.ok) {
+          showToast('Deleted: ' + col.name, 'ok');
+          if (expandedCol === col.name) expandedCol = null;
+          invalidateCollectionUiCache();
+          loadCollections(true);
+        } else {
+          showToast((r && r.msg) || 'Delete failed', 'err');
+        }
+      });
     });
   });
 
@@ -1693,14 +1748,15 @@ function buildOwnerSection(ownerKey, collections, labels, disabledMap) {
   delSectionBtn.addEventListener('click', function(e) {
     e.stopPropagation();
     var sectionLabel = ownerLabels[ownerKey] || ownerKey;
-    if (!confirm('Delete ALL collections in ' + sectionLabel + '? This removes ' + collections.length + ' collections and all their data. Cannot be undone.')) return;
-    var promises = collections.map(function(c) {
-      return callApi('delete_collection', c.name);
-    });
-    Promise.all(promises).then(function() {
-      showToast('Deleted all in ' + sectionLabel, 'ok');
-      invalidateCollectionUiCache();
-      loadCollections(true);
+    showConfirm('Delete ALL collections in ' + sectionLabel + '? This removes ' + collections.length + ' collections and all their data. Cannot be undone.', function() {
+      var promises = collections.map(function(c) {
+        return callApi('delete_collection', c.name);
+      });
+      Promise.all(promises).then(function() {
+        showToast('Deleted all in ' + sectionLabel, 'ok');
+        invalidateCollectionUiCache();
+        loadCollections(true);
+      });
     });
   });
   rightSide.appendChild(delSectionBtn);
@@ -2849,14 +2905,15 @@ function createWorkspace() {
 }
 
 function deleteWorkspace(name) {
-  if (!confirm('Delete workspace "' + name + '"?')) return;
-  callApi('delete_workspace', name).then(function(r) {
-    if (r && r.ok) {
-      showToast(r.msg || ('Workspace "' + name + '" deleted'), 'ok');
-      loadWorkspaces();
-    } else {
-      showToast((r && r.msg) || 'Failed to delete workspace', 'err');
-    }
+  showConfirm('Delete workspace "' + name + '"?', function() {
+    callApi('delete_workspace', name).then(function(r) {
+      if (r && r.ok) {
+        showToast(r.msg || ('Workspace "' + name + '" deleted'), 'ok');
+        loadWorkspaces();
+      } else {
+        showToast((r && r.msg) || 'Failed to delete workspace', 'err');
+      }
+    });
   });
 }
 
@@ -3695,14 +3752,15 @@ function loadCustomClis() {
 }
 
 function removeCustomCli(cliId) {
-  if (!confirm("Remove the memory lane '" + cliId + "'?")) return;
-  callApi('remove_custom_cli', cliId).then(function(r) {
-    if (r && r.ok) {
-      showToast(r.msg, 'ok');
-      loadCustomClis();
-    } else {
-      showToast((r && r.msg) || 'Failed to remove lane', 'err');
-    }
+  showConfirm("Remove the memory lane '" + cliId + "'?", function() {
+    callApi('remove_custom_cli', cliId).then(function(r) {
+      if (r && r.ok) {
+        showToast(r.msg, 'ok');
+        loadCustomClis();
+      } else {
+        showToast((r && r.msg) || 'Failed to remove lane', 'err');
+      }
+    });
   });
 }
 

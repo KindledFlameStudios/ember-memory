@@ -692,6 +692,24 @@ select option { background: var(--bg-raised); color: var(--ember-glow); }
 .install-result.ok { color: var(--success); }
 .install-result.err { color: var(--error); }
 
+/* Confirm modal */
+.confirm-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.55); z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+  animation: confirmFadeIn 0.15s ease-out;
+}
+@keyframes confirmFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.confirm-box {
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: 8px;
+  padding: 20px 24px; max-width: 400px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.confirm-msg {
+  font-size: 13px; color: var(--fg); line-height: 1.6; margin-bottom: 18px;
+}
+.confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.confirm-actions .btn { min-width: 72px; }
+
 .hook-test-result {
   display: grid;
   gap: 6px;
