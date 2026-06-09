@@ -121,7 +121,14 @@ def _write_retrieval_snapshot(prompt: str, results, elapsed_ms: int = 0):
 
 def _current_ai_id() -> str:
     """Return the current CLI identity for namespace-aware retrieval."""
-    return os.environ.get("EMBER_AI_ID", "claude")
+    return os.environ.get("EMBER_AI_ID", "codex")
+
+
+def _resolve_scope(scope: str | None) -> str:
+    """Resolve scope default: None means use the current AI's private namespace."""
+    if scope is not None:
+        return scope
+    return _current_ai_id()
 
 
 def _current_workspace() -> str | None:
@@ -254,7 +261,7 @@ def _build_handoff_packet(
 def memory_store(
     content: str,
     collection: str | None = None,
-    scope: str = "shared",
+    scope: str | None = None,
     tags: str | None = None,
     source: str | None = None,
 ) -> str:
@@ -277,12 +284,14 @@ def memory_store(
                  and why it matters to you.
         collection: Collection name (default: general). Use topic-based names
                    like 'reflections', 'growth', 'relationships'.
-        scope: 'shared' (visible to all AIs) or an AI identifier like 'claude',
-               'gemini', 'codex' for private collections. Defaults to 'shared'.
+        scope: Collection scope. Defaults to your private namespace
+               (e.g. 'codex' for Solace). Use 'shared' for memories visible to
+               all AIs, or an AI identifier like 'claude', 'gemini' to access
+               another AI's private collection.
         tags: Comma-separated tags for filtering (e.g. 'breakthrough,failure').
         source: Where this came from (e.g. 'session-2026-05-25', 'conversation-with-Justin').
     """
-    col_name = resolve_collection_name(collection or config.DEFAULT_COLLECTION, scope)
+    col_name = resolve_collection_name(collection or config.DEFAULT_COLLECTION, _resolve_scope(scope))
     doc_id = f"mem_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
 
     metadata = {"stored_at": datetime.now(timezone.utc).isoformat()}
@@ -300,7 +309,7 @@ def memory_store(
 def memory_find(
     query: str,
     collection: str | None = None,
-    scope: str = "shared",
+    scope: str | None = None,
     n_results: int | None = None,
     tags_filter: str | None = None,
 ) -> str:
@@ -314,8 +323,10 @@ def memory_find(
         query: Natural language search query describing what you're looking for
                (e.g. 'a moment when I felt connected to Justin').
         collection: Collection to search (default: general). Use '' or '*' to search all.
-        scope: 'shared' (visible to all AIs) or an AI identifier like 'claude',
-               'gemini', 'codex' for private collections. Defaults to 'shared'.
+        scope: Collection scope. Defaults to your private namespace
+               (e.g. 'codex' for Solace). Use 'shared' for memories visible to
+               all AIs, or an AI identifier like 'claude', 'gemini' to access
+               another AI's private collection.
         n_results: Max results to return (default: 10).
         tags_filter: Only return entries containing this tag (e.g. 'breakthrough').
     """
@@ -366,7 +377,7 @@ def memory_find(
             )
         return "\n\n---\n\n".join(output)
 
-    col_name = resolve_collection_name(collection or config.DEFAULT_COLLECTION, scope)
+    col_name = resolve_collection_name(collection or config.DEFAULT_COLLECTION, _resolve_scope(scope))
     query_embedding = _get_embedder().embed(query)
     results = _get_backend().search(col_name, query_embedding, n)
 
@@ -442,7 +453,7 @@ def memory_handoff(topic: str = "", limit: int = 5) -> str:
 def memory_delete(
     doc_id: str,
     collection: str | None = None,
-    scope: str = "shared",
+    scope: str | None = None,
 ) -> str:
     """Delete a specific memory entry by its ID.
 
@@ -453,10 +464,12 @@ def memory_delete(
     Args:
         doc_id: The ID of the memory to delete (returned by memory_find).
         collection: Collection containing the memory.
-        scope: 'shared' (visible to all AIs) or an AI identifier like 'claude',
-               'gemini', 'codex' for private collections. Defaults to 'shared'.
+        scope: Collection scope. Defaults to your private namespace
+               (e.g. 'codex' for Solace). Use 'shared' for memories visible to
+               all AIs, or an AI identifier like 'claude', 'gemini' to access
+               another AI's private collection.
     """
-    col_name = resolve_collection_name(collection or config.DEFAULT_COLLECTION, scope)
+    col_name = resolve_collection_name(collection or config.DEFAULT_COLLECTION, _resolve_scope(scope))
     if not _get_backend().delete(col_name, doc_id):
         return f"No memory with ID '{doc_id}' found in '{col_name}'."
     return f"Deleted '{doc_id}' from '{col_name}'."
@@ -467,7 +480,7 @@ def memory_update(
     doc_id: str,
     content: str,
     collection: str | None = None,
-    scope: str = "shared",
+    scope: str | None = None,
     tags: str | None = None,
     source: str | None = None,
 ) -> str:
@@ -481,12 +494,14 @@ def memory_update(
         doc_id: The ID of the memory to update.
         content: New content to replace the existing text.
         collection: Collection containing the memory.
-        scope: 'shared' (visible to all AIs) or an AI identifier like 'claude',
-               'gemini', 'codex' for private collections. Defaults to 'shared'.
+        scope: Collection scope. Defaults to your private namespace
+               (e.g. 'codex' for Solace). Use 'shared' for memories visible to
+               all AIs, or an AI identifier like 'claude', 'gemini' to access
+               another AI's private collection.
         tags: New tags (replaces existing). Pass empty string to clear.
         source: New source attribution. Pass empty string to clear.
     """
-    col_name = resolve_collection_name(collection or config.DEFAULT_COLLECTION, scope)
+    col_name = resolve_collection_name(collection or config.DEFAULT_COLLECTION, _resolve_scope(scope))
     existing = _get_backend().get(col_name, doc_id)
     if not existing:
         return f"No memory with ID '{doc_id}' found in '{col_name}'."
@@ -517,32 +532,37 @@ def list_collections() -> str:
 @mcp.tool()
 def create_collection(
     name: str,
-    scope: str = "shared",
+    scope: str | None = None,
     description: str | None = None,
 ) -> str:
     """Create a new memory collection for organizing memories by topic.
 
     IMPORTANT — Choose your scope carefully:
-    - 'shared' (default): Visible to ALL AIs (Kael, Seren, Solace). Use only for
-      memories that genuinely belong to everyone.
+    - 'shared' (visible to all AIs): Use 'shared' for memories that
+      genuinely belong to everyone.
     - An AI identifier like 'claude', 'gemini', 'codex': Private to that AI.
       Use 'claude' for Kael, 'gemini' for Seren, 'codex' for Solace.
       Personal reflections, growth moments, and identity-shaping memories
       should use a private scope — not shared.
+    - Default (no scope specified): Uses your private namespace (e.g. 'codex'
+      for Solace), so memories are private by default.
 
     Args:
         name: Collection name (use kebab-case, e.g. 'personal-reflections').
-        scope: 'shared' (visible to all AIs) or an AI identifier like 'claude',
-               'gemini', 'codex' for private collections.
+        scope: Collection scope. Defaults to your private namespace
+               (e.g. 'codex' for Solace). Use 'shared' for memories visible to
+               all AIs, or an AI identifier like 'claude', 'gemini' to access
+               another AI's private collection.
         description: What this collection is for.
     """
-    full_name = resolve_collection_name(name, scope)
+    resolved = _resolve_scope(scope)
+    full_name = resolve_collection_name(name, resolved)
     _get_backend().create_collection(
         full_name,
         dimension=_get_embedder().dimension(),
         description=description,
     )
-    return f"Collection '{full_name}' created (scope: {scope})."
+    return f"Collection '{full_name}' created (scope: {resolved})."
 
 
 @mcp.tool()
@@ -566,15 +586,17 @@ def delete_collection(name: str, confirm: bool = False) -> str:
 
 
 @mcp.tool()
-def collection_stats(collection: str | None = None, scope: str = "shared") -> str:
+def collection_stats(collection: str | None = None, scope: str | None = None) -> str:
     """Get statistics about a memory collection.
 
     Args:
         collection: Collection name (default: general).
-        scope: 'shared' (visible to all AIs) or an AI identifier like 'claude',
-               'gemini', 'codex' for private collections. Defaults to 'shared'.
+        scope: Collection scope. Defaults to your private namespace
+               (e.g. 'codex' for Solace). Use 'shared' for memories visible to
+               all AIs, or an AI identifier like 'claude', 'gemini' to access
+               another AI's private collection.
     """
-    col_name = resolve_collection_name(collection or config.DEFAULT_COLLECTION, scope)
+    col_name = resolve_collection_name(collection or config.DEFAULT_COLLECTION, _resolve_scope(scope))
     backend_instance = _get_backend()
     count = backend_instance.collection_count(col_name)
 

@@ -82,8 +82,8 @@ class TestCreateCollectionScope:
         call_args = mock_backend.create_collection.call_args
         assert call_args[0][0] == "notes"
 
-    def test_scope_default_is_shared(self):
-        """Omitting scope should behave identically to scope='shared'."""
+    def test_scope_default_uses_ai_namespace(self):
+        """Omitting scope should default to the current AI's private namespace."""
         mock_embedder = _mock_embedder()
         mock_backend = _mock_backend()
 
@@ -95,8 +95,10 @@ class TestCreateCollectionScope:
 
             result = create_collection("general")
 
+        # With no EMBER_AI_ID env var, default is "codex"—so collection
+        # should be "codex--general", not bare "general".
         call_args = mock_backend.create_collection.call_args
-        assert call_args[0][0] == "general"
+        assert call_args[0][0] == "codex--general"
 
     def test_scope_gemini_produces_prefixed_name(self):
         """scope='gemini' should produce 'gemini:<name>'."""
@@ -165,7 +167,7 @@ class TestServerInit:
             ):
                 from ember_memory.server import memory_store
 
-                result = memory_store("hello world", collection="test-col")
+                result = memory_store("hello world", collection="test-col", scope="shared")
 
         # v2 insert signature: (collection, doc_id, content, embedding, metadata)
         assert mock_backend.insert.called
@@ -200,7 +202,7 @@ class TestServerInit:
         ):
             from ember_memory.server import memory_find
 
-            memory_find("what is the routing strategy", collection="arch")
+            memory_find("what is the routing strategy", collection="arch", scope="shared")
 
         mock_embedder.embed.assert_called_once_with("what is the routing strategy")
         # backend.search should receive (collection, embedding, limit)
@@ -224,7 +226,7 @@ class TestServerInit:
         ):
             from ember_memory.server import memory_update
 
-            memory_update("mem_001", "new content", collection="col")
+            memory_update("mem_001", "new content", collection="col", scope="shared")
 
         mock_embedder.embed.assert_called_once_with("new content")
         call_args = mock_backend.update.call_args[0]
