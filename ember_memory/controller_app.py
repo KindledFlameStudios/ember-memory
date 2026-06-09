@@ -2066,6 +2066,44 @@ class EmberAPI:
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
+    def list_collection_entries(self, collection, limit=50, offset=0):
+        """List entries in a collection with pagination."""
+        try:
+            from ember_memory.core.backends.loader import get_backend_v2
+            backend = get_backend_v2()
+
+            safe_limit = max(1, min(int(limit), 500))
+            safe_offset = max(0, int(offset))
+
+            total = backend.collection_count(collection)
+            if total == 0:
+                return {"ok": True, "entries": [], "total": 0, "offset": safe_offset, "limit": safe_limit}
+
+            entries = backend.collection_list(collection, limit=safe_limit, offset=safe_offset)
+
+            # Format each entry for the frontend
+            formatted = []
+            for entry in entries:
+                meta = entry.get("metadata") or {}
+                formatted.append({
+                    "id": entry.get("id", ""),
+                    "content": entry.get("content", ""),
+                    "stored_at": meta.get("stored_at", meta.get("updated_at", "")),
+                    "updated_at": meta.get("updated_at", ""),
+                    "tags": meta.get("tags", ""),
+                    "source": meta.get("source", ""),
+                })
+
+            return {
+                "ok": True,
+                "entries": formatted,
+                "total": total,
+                "offset": safe_offset,
+                "limit": safe_limit,
+            }
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
     def search_collection(self, collection, query, limit=5):
         """Search within a specific collection."""
         try:

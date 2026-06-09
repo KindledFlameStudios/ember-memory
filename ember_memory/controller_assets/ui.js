@@ -1225,10 +1225,30 @@ function buildColItem(col, labels, disabledMap) {
   header.appendChild(addFilesBtn);
   header.appendChild(delBtn);
 
-  // Search area
-  var searchArea = document.createElement('div');
-  searchArea.className = 'col-search-area' + (expandedCol === col.name ? ' visible' : '');
-  searchArea.id = 'search-' + col.name;
+  // Expanded area: mode tabs + search/browse panes
+  var expandedArea = document.createElement('div');
+  expandedArea.className = 'col-search-area' + (expandedCol === col.name ? ' visible' : '');
+  expandedArea.id = 'expanded-' + col.name;
+
+  // Mode tabs
+  var modeTabs = document.createElement('div');
+  modeTabs.className = 'col-mode-tabs';
+
+  var browseTab = document.createElement('button');
+  browseTab.className = 'col-mode-tab active';
+  browseTab.textContent = 'Browse';
+
+  var searchTab = document.createElement('button');
+  searchTab.className = 'col-mode-tab';
+  searchTab.textContent = 'Search';
+
+  modeTabs.appendChild(browseTab);
+  modeTabs.appendChild(searchTab);
+
+  // Search pane (existing search functionality)
+  var searchPane = document.createElement('div');
+  searchPane.className = 'col-mode-pane';
+  searchPane.style.display = 'none';
 
   var searchRow   = document.createElement('div');
   searchRow.className = 'search-row';
@@ -1259,24 +1279,166 @@ function buildColItem(col, labels, disabledMap) {
   resultsEl.className = 'search-results';
   resultsEl.id = 'results-' + col.name;
 
-  searchArea.appendChild(searchRow);
-  searchArea.appendChild(resultsEl);
+  searchPane.appendChild(searchRow);
+  searchPane.appendChild(resultsEl);
+
+  // Browse pane
+  var browsePane = document.createElement('div');
+  browsePane.className = 'col-mode-pane';
+
+  var browseEntries = document.createElement('div');
+  browseEntries.className = 'browse-entries';
+  browseEntries.id = 'browse-entries-' + col.name;
+
+  var browseLoadMore = document.createElement('button');
+  browseLoadMore.className = 'browse-load-more';
+  browseLoadMore.textContent = 'Load more';
+  browseLoadMore.style.display = 'none';
+
+  browsePane.appendChild(browseEntries);
+  browsePane.appendChild(browseLoadMore);
+
+  expandedArea.appendChild(modeTabs);
+  expandedArea.appendChild(searchPane);
+  expandedArea.appendChild(browsePane);
+
+  expandedArea.addEventListener('click', function(e) {
+    e.stopPropagation();
+  });
 
   wrap.appendChild(header);
-  wrap.appendChild(searchArea);
+  wrap.appendChild(expandedArea);
+
+  // Browse state
+  var browseOffset = 0;
+  var browseLimit = 50;
+  var browseTotal = 0;
+  var currentMode = 'browse';
+
+  function switchMode(mode) {
+    currentMode = mode;
+    if (mode === 'browse') {
+      browseTab.classList.add('active');
+      searchTab.classList.remove('active');
+      browsePane.style.display = '';
+      searchPane.style.display = 'none';
+    } else {
+      searchTab.classList.add('active');
+      browseTab.classList.remove('active');
+      searchPane.style.display = '';
+      browsePane.style.display = 'none';
+    }
+  }
+
+  browseTab.addEventListener('click', function(e) {
+    e.stopPropagation();
+    switchMode('browse');
+  });
+  searchTab.addEventListener('click', function(e) {
+    e.stopPropagation();
+    switchMode('search');
+  });
+
+  function doBrowse(append) {
+    if (!append) {
+      browseOffset = 0;
+      browseEntries.textContent = '';
+    }
+    // Loading indicator
+    var loadRow = document.createElement('div');
+    loadRow.className = 'loading-text';
+    var spin = document.createElement('div');
+    spin.className = 'spinner';
+    loadRow.appendChild(spin);
+    loadRow.appendChild(el('span', null, ' Loading entries...'));
+    browseEntries.appendChild(loadRow);
+
+    callApi('list_collection_entries', col.name, browseLimit, browseOffset).then(function(r) {
+      loadRow.remove();
+      if (!r || !r.ok) {
+        browseEntries.appendChild(el('div', 'empty-state', (r && r.msg) || 'Failed to load entries'));
+        return;
+      }
+      browseTotal = r.total || 0;
+      if (browseTotal === 0 && !append) {
+        browseEntries.appendChild(el('div', 'empty-state', 'No entries in this collection'));
+        browseLoadMore.style.display = 'none';
+        return;
+      }
+      var entries = r.entries || [];
+      entries.forEach(function(entry) {
+        var card = document.createElement('div');
+        card.className = 'browse-entry';
+
+        var hdr = document.createElement('div');
+        hdr.className = 'browse-entry-header';
+
+        var idEl = el('span', 'browse-entry-id', entry.id || '\u2014');
+        var dateEl = el('span', 'browse-entry-date', entry.stored_at ? entry.stored_at.substring(0, 10) : '');
+        hdr.appendChild(idEl);
+        if (dateEl.textContent) hdr.appendChild(dateEl);
+
+        var tagsStr = entry.tags || '';
+        if (tagsStr) {
+          var tagsWrap = document.createElement('span');
+          tagsWrap.className = 'browse-entry-tags';
+          tagsStr.split(',').forEach(function(t) {
+            t = t.trim();
+            if (t) tagsWrap.appendChild(el('span', 'browse-entry-tag', t));
+          });
+          hdr.appendChild(tagsWrap);
+        }
+
+        var previewText = (entry.content || '').split('\n')[0] || '';
+        if (previewText.length > 80) previewText = previewText.substring(0, 80) + '\u2026';
+        var preview = el('span', 'browse-entry-preview', previewText);
+        hdr.appendChild(preview);
+
+        var contentEl = document.createElement('div');
+        contentEl.className = 'browse-entry-content';
+        contentEl.textContent = entry.content || '';
+        if (entry.source) {
+          var srcEl = el('div', 'browse-entry-source', 'source: ' + entry.source);
+          contentEl.appendChild(srcEl);
+        }
+
+        hdr.addEventListener('click', function() {
+          contentEl.classList.toggle('visible');
+        });
+
+        card.appendChild(hdr);
+        card.appendChild(contentEl);
+        browseEntries.appendChild(card);
+      });
+
+      browseOffset += entries.length;
+      if (browseOffset < browseTotal) {
+        browseLoadMore.style.display = '';
+      } else {
+        browseLoadMore.style.display = 'none';
+      }
+    });
+  }
+
+  browseLoadMore.addEventListener('click', function(e) {
+    e.stopPropagation();
+    doBrowse(true);
+  });
 
   // Events
   function toggleExpanded() {
     if (expandedCol === col.name) {
       expandedCol = null;
       header.classList.remove('expanded');
-      searchArea.classList.remove('visible');
+      expandedArea.classList.remove('visible');
     } else {
       document.querySelectorAll('.col-item').forEach(function(i) { i.classList.remove('expanded'); });
       document.querySelectorAll('.col-search-area').forEach(function(a) { a.classList.remove('visible'); });
       expandedCol = col.name;
       header.classList.add('expanded');
-      searchArea.classList.add('visible');
+      expandedArea.classList.add('visible');
+      switchMode('browse');
+      doBrowse(false);
     }
   }
 
