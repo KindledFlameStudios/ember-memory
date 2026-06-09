@@ -44,7 +44,13 @@ def resolve_collection_name(topic: str, scope: str = "shared") -> str:
         'notes'
         >>> resolve_collection_name("preferences", scope="claude")
         'claude--preferences'
+        >>> resolve_collection_name("claude--preferences", scope="claude")
+        'claude--preferences'
     """
+    # Guard against double-prefixing: if the topic already starts with the
+    # scope prefix, don't add it again.
+    if scope != SHARED_NAMESPACE and topic.startswith(f"{scope}{NS_SEP}"):
+        return topic
     if scope == SHARED_NAMESPACE:
         return topic
     return f"{scope}{NS_SEP}{topic}"

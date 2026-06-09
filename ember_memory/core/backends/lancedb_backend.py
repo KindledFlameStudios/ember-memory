@@ -203,6 +203,10 @@ class LanceBackend(MemoryBackend):
             "vector": [float(v) for v in embedding],
             "metadata": json.dumps(metadata),
         }])
+        try:
+            tbl.optimize()
+        except Exception:
+            pass  # optimize is best-effort
         return True
 
     def delete(self, collection: str, doc_id: str) -> bool:
@@ -212,6 +216,10 @@ class LanceBackend(MemoryBackend):
         if not existing:
             return False
         tbl.delete(f"id = '{doc_id}'")
+        try:
+            tbl.optimize()
+        except Exception:
+            pass  # optimize is best-effort
         return True
 
     # ── Query ─────────────────────────────────────────────────────────────────
