@@ -238,3 +238,33 @@ class MemoryBackend(ABC):
             ``"metadata"`` keys.
         """
         ...
+
+    def collection_list(
+        self,
+        collection: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
+        """Return a paginated slice of all documents in a collection.
+
+        Unlike :meth:`collection_peek`, this is intended for full enumeration
+        of a collection. Use ``offset`` to walk pages; continue while the
+        returned list has length ``limit``.
+
+        Backends with native pagination should override this for efficiency.
+        This default reads a large window via :meth:`collection_peek` and
+        slices in Python.
+
+        Args:
+            collection: Collection to list.
+            limit:      Maximum documents to return (capped at 500).
+            offset:     Number of documents to skip.
+
+        Returns:
+            A list of dicts with ``"id"``, ``"content"``, and ``"metadata"``.
+            Empty list if the collection doesn't exist or offset exceeds count.
+        """
+        safe_limit = max(1, min(limit, 500))
+        safe_offset = max(0, offset)
+        window = self.collection_peek(collection, limit=safe_offset + safe_limit)
+        return window[safe_offset : safe_offset + safe_limit]

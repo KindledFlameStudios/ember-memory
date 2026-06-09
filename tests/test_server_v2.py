@@ -261,3 +261,157 @@ def test_get_hot_memories_aggregates_session_scopes_and_skips_disabled(tmp_path)
         }
     ]
     assert hot_topics == ["identity"]
+
+
+# ── collection_list tests ─────────────────────────────────────────────────────
+
+
+class TestCollectionList:
+    """collection_list should enumerate entries with pagination."""
+
+    def test_basic_list_with_ids_dates_tags(self):
+        """Output should include IDs, dates, tags, and content previews."""
+        mock_backend = _mock_backend()
+        mock_backend.collection_count.return_value = 2
+        mock_backend.collection_list.return_value = [
+            {
+                "id": "mem_001",
+                "content": "First memory content",
+                "metadata": {"stored_at": "2026-01-01T00:00:00+00:00", "tags": "insight"},
+            },
+            {
+                "id": "mem_002",
+                "content": "Second memory content",
+                "metadata": {"updated_at": "2026-02-01T00:00:00+00:00"},
+            },
+        ]
+
+        with (
+            patch("ember_memory.server.embedder", _mock_embedder()),
+            patch("ember_memory.server.backend", mock_backend),
+        ):
+            from ember_memory.server import collection_list
+
+            result = collection_list(collection="general", scope="shared")
+
+        assert "mem_001" in result
+        assert "mem_002" in result
+        assert "2026-01-01" in result
+        assert "2026-02-01" in result
+        assert "[tags: insight]" in result
+        assert "First memory content" in result
+        assert "Second memory content" in result
+
+    def test_pagination_footer_when_more_entries(self):
+        """When there are more entries beyond the page, a footer should appear."""
+        mock_backend = _mock_backend()
+        mock_backend.collection_count.return_value = 100
+        mock_backend.collection_list.return_value = [
+            {"id": f"mem_{i:03d}", "content": f"content {i}", "metadata": {}}
+            for i in range(50)
+        ]
+
+        with (
+            patch("ember_memory.server.embedder", _mock_embedder()),
+            patch("ember_memory.server.backend", mock_backend),
+        ):
+            from ember_memory.server import collection_list
+
+            result = collection_list(collection="general", scope="shared", limit=50, offset=0)
+
+        assert "More available" in result
+        assert "offset=50" in result
+        assert "showing 1-50 of 100" in result
+
+    def test_no_footer_on_last_page(self):
+        """When all entries fit in one page, no pagination footer should appear."""
+        mock_backend = _mock_backend()
+        mock_backend.collection_count.return_value = 3
+        mock_backend.collection_list.return_value = [
+            {"id": f"mem_{i}", "content": f"content {i}", "metadata": {}}
+            for i in range(3)
+        ]
+
+        with (
+            patch("ember_memory.server.embedder", _mock_embedder()),
+            patch("ember_memory.server.backend", mock_backend),
+        ):
+            from ember_memory.server import collection_list
+
+            result = collection_list(collection="general", scope="shared")
+
+        assert "More available" not in result
+        assert "showing 1-3 of 3" in result
+
+    def test_empty_collection_message(self):
+        """An empty collection should return a clear message."""
+        mock_backend = _mock_backend()
+        mock_backend.collection_count.return_value = 0
+
+        with (
+            patch("ember_memory.server.embedder", _mock_embedder()),
+            patch("ember_memory.server.backend", mock_backend),
+        ):
+            from ember_memory.server import collection_list
+
+            result = collection_list(collection="general", scope="shared")
+
+        assert "empty" in result.lower()
+        mock_backend.collection_list.assert_not_called()
+
+    def test_offset_beyond_end_message(self):
+        """Offset beyond the collection size should return a clear message."""
+        mock_backend = _mock_backend()
+        mock_backend.collection_count.return_value = 10
+        mock_backend.collection_list.return_value = []
+
+        with (
+            patch("ember_memory.server.embedder", _mock_embedder()),
+            patch("ember_memory.server.backend", mock_backend),
+        ):
+            from ember_memory.server import collection_list
+
+            result = collection_list(collection="general", scope="shared", offset=100)
+
+        assert "No entries at offset 100" in result
+        assert "total: 10" in result
+
+    def test_scope_resolution(self):
+        """collection_list should resolve scope like other tools."""
+        mock_backend = _mock_backend()
+        mock_backend.collection_count.return_value = 1
+        mock_backend.collection_list.return_value = [
+            {"id": "mem_001", "content": "test", "metadata": {}},
+        ]
+
+        with (
+            patch("ember_memory.server.embedder", _mock_embedder()),
+            patch("ember_memory.server.backend", mock_backend),
+        ):
+            from ember_memory.server import collection_list
+
+            result = collection_list(collection="notes", scope="claude")
+
+        call_args = mock_backend.collection_list.call_args[0]
+        assert call_args[0] == "claude--notes"
+
+    def test_long_content_truncated(self):
+        """Content longer than 80 chars should be truncated with '...'."""
+        long_content = "A" * 120
+        mock_backend = _mock_backend()
+        mock_backend.collection_count.return_value = 1
+        mock_backend.collection_list.return_value = [
+            {"id": "mem_001", "content": long_content, "metadata": {}},
+        ]
+
+        with (
+            patch("ember_memory.server.embedder", _mock_embedder()),
+            patch("ember_memory.server.backend", mock_backend),
+        ):
+            from ember_memory.server import collection_list
+
+            result = collection_list(collection="general", scope="shared")
+
+        # Preview should be truncated at 80 chars + "..."
+        assert "AAA..." in result
+        assert "A" * 81 not in result

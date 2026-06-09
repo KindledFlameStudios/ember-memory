@@ -302,3 +302,33 @@ class LanceBackend(MemoryBackend):
         n = min(limit, tbl.count_rows())
         rows = tbl.head(n).to_pylist()
         return [self._row_to_doc(row) for row in rows]
+
+    def collection_list(
+        self,
+        collection: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
+        """Return a paginated slice of all documents in the collection.
+
+        LanceDB does not expose native offset/limit for plain scans, so we
+        materialise via ``to_pylist()`` and slice in Python. Acceptable for
+        expected collection sizes (hundreds to low thousands).
+        """
+        db = self._require_db()
+        if collection not in db.table_names():
+            return []
+        try:
+            tbl = db.open_table(collection)
+        except Exception:
+            return []
+        total = tbl.count_rows()
+        if total == 0 or offset >= total:
+            return []
+
+        safe_limit = max(1, min(limit, 500))
+        safe_offset = max(0, offset)
+
+        rows = tbl.to_pylist()
+        window = rows[safe_offset : safe_offset + safe_limit]
+        return [self._row_to_doc(row) for row in window]

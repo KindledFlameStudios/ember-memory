@@ -294,3 +294,40 @@ class ChromaBackendV2(MemoryBackend):
                 "metadata": peek["metadatas"][i] if peek.get("metadatas") else {},
             })
         return out
+
+    def collection_list(
+        self,
+        collection: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
+        """Return a paginated slice of all documents in the collection.
+
+        Uses ChromaDB's native ``get(limit=, offset=)`` for server-side
+        pagination — no full materialisation required.
+        """
+        try:
+            col = self._get_collection(collection)
+        except Exception:
+            return []
+
+        count = col.count()
+        if count == 0 or offset >= count:
+            return []
+
+        safe_limit = max(1, min(limit, 500))
+        safe_offset = max(0, offset)
+
+        result = col.get(
+            limit=safe_limit,
+            offset=safe_offset,
+            include=["documents", "metadatas"],
+        )
+        out: list[dict] = []
+        for i, doc_id in enumerate(result.get("ids", [])):
+            out.append({
+                "id": doc_id,
+                "content": result["documents"][i] if result.get("documents") else "",
+                "metadata": result["metadatas"][i] if result.get("metadatas") else {},
+            })
+        return out

@@ -614,6 +614,70 @@ def collection_stats(collection: str | None = None, scope: str | None = None) ->
     return f"Collection: {col_name}\nEntries: {count}\nRecent samples:\n" + "\n".join(recent)
 
 
+@mcp.tool()
+def collection_list(
+    collection: str | None = None,
+    scope: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> str:
+    """List all entries in a memory collection with pagination.
+
+    Unlike collection_stats (which shows 5 sample previews) or memory_find
+    (which requires a semantic query), this lets you enumerate the full
+    contents of a collection page by page. Use this when you want to
+    see what's actually stored without knowing what to search for.
+
+    Args:
+        collection: Collection name (default: general).
+        scope: Collection scope. Defaults to your private namespace
+               (e.g. 'codex' for Solace). Use 'shared' for memories visible
+               to all AIs, or an AI identifier like 'claude', 'gemini' to
+               access another AI's private collection.
+        limit:  Maximum entries to return per page (default 50, max 500).
+        offset: Number of entries to skip — increment by the previous
+                page's actual return count to walk through the collection.
+    """
+    col_name = resolve_collection_name(
+        collection or config.DEFAULT_COLLECTION, _resolve_scope(scope)
+    )
+    backend_instance = _get_backend()
+    total = backend_instance.collection_count(col_name)
+    if total == 0:
+        return f"Collection '{col_name}' is empty."
+
+    safe_limit = max(1, min(limit, 500))
+    safe_offset = max(0, offset)
+
+    entries = backend_instance.collection_list(
+        col_name, limit=safe_limit, offset=safe_offset
+    )
+    if not entries:
+        return f"No entries at offset {safe_offset} in '{col_name}' (total: {total})."
+
+    lines = []
+    for entry in entries:
+        meta = entry.get("metadata") or {}
+        stored = meta.get("stored_at") or meta.get("updated_at") or "unknown"
+        tags = meta.get("tags", "")
+        tags_str = f" [tags: {tags}]" if tags else ""
+        content = entry.get("content", "")
+        first_line = content.split("\n", 1)[0].strip()
+        preview = first_line[:80] + "..." if len(first_line) > 80 else first_line
+        lines.append(f"  - {entry['id']} ({stored}){tags_str}: {preview}")
+
+    start = safe_offset + 1
+    end = safe_offset + len(entries)
+    header = f"Collection '{col_name}': showing {start}-{end} of {total}"
+    has_more = end < total
+    footer = (
+        f"\n(More available — call again with offset={end} to see the next page.)"
+        if has_more
+        else ""
+    )
+    return header + "\n" + "\n".join(lines) + footer
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
