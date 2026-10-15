@@ -48,6 +48,7 @@ dev = [
 
 [project.scripts]
 ember-memory = "ember_memory.__main__:main"
+ember-firecore = "ember_memory.firecore:main"
 ember-memory-claude-hook = "ember_memory.hook:main"
 ember-memory-codex-hook = "ember_memory.codex_hook:main"
 ember-memory-gemini-hook = "ember_memory.gemini_hook:main"
