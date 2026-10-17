@@ -1,20 +1,82 @@
 # FireCore headless local service seam
 
-This prototype adds `ember_memory.firecore` at the pinned Ember source revision `270510291cc23a69d600f5cf08cbea60d486d7ff`. Ember owns this module and its SQLite lexical/index lifecycle. It imports Ember's pure-Python `BM25` and tokenizer, then uses only the Python standard library for FTS/literal candidate selection, SQLite, JSON, HMAC, and stdio. It does not import the controller, vector backends, embedding providers, hooks, or network listeners.
+Ember owns the lexical service and disposable SQLite projection. The service
+module imports only its lexical scorer and Python's standard library; the
+headless wheel deliberately carries a minimal `ember_memory` namespace
+and does not install controller, vector, embedding, provider, hook, or GUI
+dependencies.
 
-## Invocation and trust boundary
+## Archive Door operations
 
-- Source checkout entry point: `python -X utf8 -m ember_memory.firecore`; package entry point: `ember-firecore`.
-- Forge launches one child per search/open operation, communicates with one bounded JSON request/response on stdio, and sets a per-process HMAC key in the child environment. No listener or background process is created.
-- The child accepts only authenticated protocol `ember.firecore.local/1`, a trusted owner supplied by Forge, an explicit stable source ID, restore epoch, coverage revision, and a complete bounded canonical snapshot.
-- The index path is supplied by the Forge host. Its records are rebuildable projections; the durable local `source_state` sequence and cursor key fence source revisions and issued cursors.
+The Forge bridge exposes the master four navigation capabilities:
 
-## Lifecycle contract
+- `memory_sessions`: find authorized sessions by title/lineage metadata and update
+  window.
+- `memory_search`: unquoted queries match all lexical terms; double-quoted
+  queries use FTS phrase-token matching. Short or punctuated queries use the
+  literal fallback. Results are grouped by session, with an exact source
+  reference and an exact matched excerpt, plus a default preview of the
+  immediately preceding canonical message (speaker and at most 100 characters).
+  Role, session, and date filters are
+  cursor-bound; the active session is excluded by default, and tool exchanges
+  and summary messages are opt-in.
+- `memory_open`: open the exact cited message and optionally bounded canonical
+  neighbors before/after it. Context is byte-bounded; if truncated, its
+  `context_continuation` points to an authorized `memory_session` page beginning
+  at the first omitted source message.
+- `memory_session`: page an authorized session in canonical order with an
+  authenticated continuation cursor. Repeat `start_message_id` from an open
+  continuation along with the returned cursor to continue that anchored page.
 
-`FireCoreService.reconcile` transactionally replaces one owner's projection for one stable source. Its owner/source primary keys isolate tenants. Forge supplies `restore_epoch` as an opaque fence: it combines its stable source ID, an independent lifecycle token persisted outside `forge.db`, and canonical generation/source revisions. Forge advances the token on first tool registration per host process and through the trusted `MarkFireCoreSourceReplaced` hook after a canonical DB replacement. That token is stable across tool-constructor calls, Ember one-shot child invocations, and document/FTS rebuilds. `coverage_revision` changes when the complete visible message inventory or message revisions change. The durable service sequence increments whenever epoch or coverage changes. Search cursors carry authenticated principal, source, restore epoch, coverage revision, sequence, query digest, view, and offset. Cursors from a prior source view or a rebuilt/changed source are rejected. Detection assumes the lifecycle sidecar is preserved and the replacement hook is called; restoring both DB and sidecar or replacing DB without the hook is outside this prototype contract.
+Search reports source freshness and query completeness independently. Ordinary
+token search uses SQLite FTS5/BM25; short or punctuated queries use a literal
+SQLite scan. Cursors bind principal, source, epoch, coverage, query/session,
+sequence, view, and position. The current implementation supports at most
+50,000 visible messages, 32 MiB per Forge-to-Ember request, 2 MiB per response,
+512 characters per query, and 50 messages per session page. Anchored context and each session page are
+limited to 1 MiB of serialized messages. These are prototype bounds, not a
+claim of million-record readiness.
 
-`search` uses Ember BM25 over a bounded canonical projection for ordinary token queries and an exhaustive casefolded literal path for short/punctuated queries. Source/result order tie-breakers use `(created_at, source_order, message_id)`, where `source_order` is supplied by Forge from canonical `created_at,rowid` traversal and rowid itself is never exposed as a citation. Query completeness is distinct from result-page continuation. `open` requires the previously cited message revision and returns `changed` without replacement text when it no longer matches. Its explicit `canonical-message-parts-binary-payloads-omitted-v1` convention preserves structured part, speaker, branch, and tool-call/result metadata while omitting binary payload bytes and redacting reasoning content. The four-capability destination and production package activation remain outside this prototype.
+## Invocation and artifact identity
+
+For source development, Forge launches
+`python -X utf8 -m ember_memory.firecore`. For a checkout-independent
+headless install, build a wheel from this repository:
+
+`python scripts/build_firecore_package.py --output <artifact-directory>`
+
+The builder uses only the standard library and emits a pure-Python wheel with no
+runtime dependencies. Install it into a dedicated environment:
+
+`python -m venv <install-root>/venv`
+`<install-root>/venv/Scripts/python.exe -m pip install --no-deps <wheel>`
+
+Configure the opt-in Forge process with `FIRECORE_PYTHON` pointing to that
+environment's interpreter and `FIRECORE_EMBER_ROOT` pointing to its
+`Lib/site-packages` directory (use the platform's equivalent path off
+Windows). Forge verifies SHA-256 over the two package initializers, service,
+and scorer before each invocation; the fingerprint is identical for the source
+checkout and built artifact. The child receives a
+per-invocation HMAC token over stdio and an allowlisted environment. No network
+listener, daemon, provider, or GUI is involved.
+
+## Lifecycle and source authority
+
+Forge's canonical SQLite history remains authoritative. The current Go boundary reads a transaction-bound complete session/revision manifest on every operation and revalidates source and runtime principal before disclosure. An in-process manifest cache identifies changed sessions; only their bounded canonical message pages are transported to Ember. Cold starts, lifecycle epoch changes, or invalidated sync state reconcile the full bounded source. It assigns source-local order by Forge's canonical `created_at,rowid` traversal; rowid is never exposed as a universal citation.
+The source lifecycle sidecar is independent of `forge.db` and advances on
+first registration per Forge process or via `MarkFireCoreSourceReplaced`
+after a supported same-process database replacement.
+
+`FireCoreService.reconcile_incremental` atomically replaces documents and FTS rows for every changed session, removes sessions absent from the complete manifest, and records the new manifest. It fails closed if the index is missing a required changed-session delta or a supplied record does not match the manifest revision. Interrupted transactions leave the prior committed projection intact. The session-granularity revision ledger means one changed session is fully paged and replaced; a single very large session can still cause a large refresh. The complete manifest remains O(number of authorized sessions) to read, hash, compare, and transport each operation. Deletions are reflected after a changed canonical revision, so removed content is not returned as current. Index rebuilding cannot detect restoring both the canonical database and lifecycle sidecar, nor an unannounced same-process swap that bypasses the replacement hook. Supported restore recovery must preserve the independent sidecar or call the hook.
+
+Search and page results carry explicit source/query status. Open binds to the
+cited message revision and returns `changed` without replacement wording
+when evidence has changed. The
+`canonical-message-parts-binary-payloads-omitted-v1` convention preserves
+structured text/tool activity, omits binary payload bytes, and redacts
+reasoning. This remains a default-off synthetic prototype, not production
+activation or a real-history pilot.
 
 ## Verification
 
-Run `python -X utf8 -m unittest tests.test_firecore -v` from the Ember checkout. Tests use only temporary synthetic SQLite data and no providers or services. The Forge integration candidate is maintained separately in `C:/firecore-s0-s4`; the original in-progress `C:/Projects/ember-memory` checkout remains unmodified by this work.
+Run `python -X utf8 -m unittest tests.test_firecore tests.test_firecore_incremental` or the focused pytest command in the Forge candidate report for disposable synthetic service checks. `scripts/benchmark_firecore_synthetic.py --records 20000` measures Ember service-only behavior; it is not the end-to-end Forge boundary result. The end-to-end 2,000-message Forge measurement, artifact SHA, exact install commands, and focused build/test evidence are recorded in `docs/reports/2026-10-16-archive-door-candidate.md` in the Forge candidate. No user history, profile, provider, or running service was accessed. The separate `C:/firecore-s0-s4` worktree and the user's original `C:/Projects/ember-memory` checkout were not edited.
